@@ -210,8 +210,18 @@ One-time GitHub setup:
 3. If the original key is encrypted, add environment secret
    `TAURI_SIGNING_PRIVATE_KEY_PASSWORD`. Otherwise leave it unset.
 4. Ensure repository/organization policy permits GitHub Actions write access to
-   repository contents. The release job uses its short-lived `GITHUB_TOKEN`;
-   no personal access token is needed.
+   repository contents. The release job defaults to its short-lived `GITHUB_TOKEN`.
+
+If release creation fails with **403: Resource not accessible by integration**,
+check the run's **Set up job → GITHUB_TOKEN Permissions** for `Contents: write`,
+and repository/organization rules restricting release tags. GitHub can also require
+**Workflows: write** when creating a release tag at a specific commit, especially
+if workflows changed since that commit. `GITHUB_TOKEN` cannot grant that permission.
+For that case, create a fine-grained personal access token restricted to
+**The-Signals/the-signal-launcher**, with **Contents: Read and write** and
+**Workflows: Read and write**. Give it an expiration and obtain organization approval
+if required. Store it as environment secret **`RELEASE_TOKEN`** in `release`.
+The workflow uses that token when present; never commit it or paste it into chat.
 
 For each release, commit a new matching version in `package.json`,
 `src-tauri/Cargo.toml`, and `src-tauri/tauri.conf.json`, and update both lockfiles

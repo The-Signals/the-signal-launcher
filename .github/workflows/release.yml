@@ -29,7 +29,9 @@ jobs:
     permissions:
       contents: write
     env:
-      GH_TOKEN: ${{ github.token }}
+      # A repository-scoped token can grant Workflows access when GitHub
+      # rejects creating a release tag at the exact built commit.
+      GH_TOKEN: ${{ secrets.RELEASE_TOKEN || github.token }}
       RELEASE_VERSION: ${{ inputs.version }}
       RELEASE_NOTES: ${{ inputs.notes }}
       RELEASE_COMMIT: ${{ github.sha }}
