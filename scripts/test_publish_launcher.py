@@ -47,6 +47,18 @@ class LauncherPublishingTests(unittest.TestCase):
     def test_rejects_signature_from_other_key(self):
         with self.assertRaises(ValueError): check_signature_key(encoded_signature(b"different"[:8]), self.pubkey)
 
+    def test_stages_github_safe_names_matching_the_updater_url(self):
+        _version, assets = self.prepare()
+        installer, signature, manifest_path = assets
+        self.assertEqual(installer.name, "The.Signal.Launcher_0.1.2_x64-setup.exe")
+        self.assertEqual(signature.name, installer.name + ".sig")
+        self.assertEqual(installer.read_bytes(), self.installer.read_bytes())
+        self.assertEqual(signature.read_text(), self.signature)
+        url = json.loads(manifest_path.read_text())["platforms"]["windows-x86_64"]["url"]
+        self.assertTrue(url.endswith("/" + installer.name))
+        self.assertNotIn(" ", url)
+        self.assertTrue(self.installer.is_file())
+
     def test_rejects_missing_signature_and_wrong_feed(self):
         Path(str(self.installer) + ".sig").unlink()
         with self.assertRaises(ValueError): self.prepare()

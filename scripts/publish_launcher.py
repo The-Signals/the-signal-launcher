@@ -4,6 +4,7 @@ import base64
 from datetime import datetime, timezone
 import http.client
 import json
+import shutil
 import subprocess
 import sys
 from pathlib import Path
@@ -60,6 +61,13 @@ def prepare_release(installer, config, repository, notes, output):
     check_signature_key(signature, updater["pubkey"], version)
     if len(notes.encode("utf-8")) > 32 * 1024:
         raise ValueError("Release notes exceed 32 KB.")
+    # GitHub normalizes spaces in asset names to dots. Stage those exact
+    # names before uploading so the updater URL matches the public asset.
+    output.mkdir(parents=True, exist_ok=True)
+    public_installer = output / f"The.Signal.Launcher_{version}_x64-setup.exe"
+    public_signature = Path(str(public_installer) + ".sig")
+    shutil.copyfile(installer, public_installer)
+    shutil.copyfile(signature_path, public_signature)
     manifest = {
         "version": version,
         "notes": notes,
@@ -67,13 +75,12 @@ def prepare_release(installer, config, repository, notes, output):
         "pub_date": datetime.fromtimestamp(installer.stat().st_mtime, timezone.utc).isoformat().replace("+00:00", "Z"),
         "platforms": {"windows-x86_64": {
             "signature": signature,
-            "url": f"https://github.com/{repository}/releases/download/v{version}/{installer.name}",
+            "url": f"https://github.com/{repository}/releases/download/v{version}/{public_installer.name}",
         }},
     }
-    output.mkdir(parents=True, exist_ok=True)
     manifest_path = output / "latest.json"
     write_manifest(manifest_path, manifest)
-    return version, (installer, signature_path, manifest_path)
+    return version, (public_installer, public_signature, manifest_path)
 
 
 def main():
