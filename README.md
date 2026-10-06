@@ -189,13 +189,13 @@ To test the complete update flow, manually install 0.1.2, then build/publish a
 newer launcher version. Confirm the prompt, **Later**, game-running block,
 download/signature validation, installation and restart on a test Windows machine.
 
-### GitHub Actions: automatic CI, manual releases
+### GitHub Actions: manual releases
 
-`.github/workflows/ci.yml` runs UI, Python publishing, and Rust tests on Windows
-for every push and pull request. It does not need signing secrets or publish anything.
+Pushes and pull requests do not trigger a workflow. Run the UI, Python publishing,
+and Rust tests locally using the commands in **Develop and build**.
 
 `.github/workflows/release.yml` runs only through **Actions → Release launcher →
-Run workflow**. It reruns CI, builds and verifies the signed installer, then publishes
+Run workflow**. It builds and verifies the signed installer, then publishes
 the installer, `.sig`, and `latest.json` using the existing publisher. No Unity builds
 are uploaded. Releases are restricted to `main` in the launcher repository, and the
 version tag targets the exact commit built, not a newer commit pushed during the run.
