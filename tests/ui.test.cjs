@@ -24,6 +24,7 @@ function harness(initial, updater = { current_version: '0.1.2', available_versio
   const calls = [];
   const windowCalls = [];
   const requests = [];
+  const listeners = new Map();
   let next = initial;
   let launcherNext = updater;
   let installResult;
@@ -42,17 +43,45 @@ function harness(initial, updater = { current_version: '0.1.2', available_versio
         if (result instanceof Error) throw result;
         return result;
       } },
-      event: { listen: async () => {} },
+      event: { listen: async (name, handler) => { listeners.set(name, handler); } },
     } },
     setInterval() {},
   });
   vm.runInContext(fs.readFileSync(path.join(__dirname, '../ui/app.js'), 'utf8'), context);
-  return { elements, calls, windowCalls, requests, context, setNext(value) { next = value; }, setUpdater(value) { launcherNext = value; }, setInstallResult(value) { installResult = value; } };
+  return { elements, calls, windowCalls, requests, listeners, context, setNext(value) { next = value; }, setUpdater(value) { launcherNext = value; }, setInstallResult(value) { installResult = value; } };
 }
 
 const installed = { version: '0.1.0', sha256: 'a', notes: 'Installed' };
 const latest = { version: '0.2.0', sha256: 'b', notes: '<script>not HTML</script>' };
 const flush = () => new Promise((resolve) => setImmediate(resolve));
+
+test('Cartographer markup retains every app control exactly once and uses local artwork', () => {
+  const html = fs.readFileSync(path.join(__dirname, '../ui/index.html'), 'utf8');
+  const app = fs.readFileSync(path.join(__dirname, '../ui/app.js'), 'utf8');
+  const ids = [...html.matchAll(/\bid="([^"]+)"/g)].map(match => match[1]);
+  assert.equal(ids.length, new Set(ids).size, 'No duplicate DOM IDs');
+  for (const [, id] of app.matchAll(/el\('([^']+)'\)/g)) assert.equal(ids.filter(value => value === id).length, 1, `Missing control: ${id}`);
+  assert.match(html, /class="map-cards"/);
+  assert.match(html, /id="notes" tabindex="0"/);
+  assert.match(html, /src="transmission\.svg"/);
+  assert.ok(fs.existsSync(path.join(__dirname, '../ui/transmission.svg')));
+  assert.doesNotMatch(html, /preview-bridge|mockups\.js/);
+});
+
+test('game and launcher progress retain determinate and indeterminate states', async () => {
+  const h = harness({ installed, latest: installed, check: 'online', running: false, message: 'Ready' });
+  await flush();
+  for (const [event, progressId, statusId] of [['install-progress', 'progress', 'status'], ['launcher-update-progress', 'launcher-progress', 'launcher-update-status']]) {
+    const handler = h.listeners.get(event);
+    handler({ payload: { message: 'Verifying…', percent: null } });
+    assert.equal(h.elements.get(progressId).hidden, false);
+    assert.equal('value' in h.elements.get(progressId), false);
+    assert.equal(h.elements.get(statusId).textContent, 'Verifying…');
+    handler({ payload: { message: 'Downloading 64%', percent: 64 } });
+    assert.equal(h.elements.get(progressId).value, 64);
+    assert.equal(h.elements.get(statusId).textContent, 'Downloading 64%');
+  }
+});
 
 test('first installation is offered and notes use textContent', async () => {
   const h = harness({ installed: null, latest, check: 'online', running: false, message: 'Ready' });
