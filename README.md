@@ -306,9 +306,16 @@ The launcher reads `https://github.com/The-Signals/the-signal-data/releases/late
   directory, including games launched outside the launcher.
 
 Game installations live below `%LOCALAPPDATA%\com.thesignal.playtest.launcher\game`.
-Builds are retained separately under `versions/`; previous builds aren't removed
-automatically in this MVP. Budget disk space accordingly. `active.json` selects
-the installed build and `latest.json` caches the last successful update check.
+Builds are staged separately under `versions/`. After successfully committing a
+new install, the launcher removes all previous managed `build-*` directories,
+including leftovers from older installs. The active build is always kept; failed
+downloads/extractions never trigger cleanup. Locked-folder cleanup failures are
+reported without undoing the install; restart the launcher to retry cleanup.
+Startup also cleans accumulated old builds when a valid active build exists and
+the game is closed. Unrelated files/folders and links are left alone. Allow enough
+disk space for the old build plus the new download and staged build during updates.
+`active.json` selects the installed build and `latest.json` caches the last
+successful update check.
 Unity saves in its normal persistent-data directory are never touched. Any saves
 written *inside the build directory* by game code will not migrate between versions.
 Uninstalling the launcher does not provide a game-data cleanup UI.
@@ -318,6 +325,7 @@ Uninstalling the launcher does not provide a game-data cleanup UI.
 - Install as a standard user with and without WebView2; verify shortcuts/uninstall.
 - Publish an actual Unity build, install it, confirm checksum and launch behavior.
 - Publish a newer build; verify Play is blocked until it is installed.
+- After updating, verify only the active managed build remains under `versions/`.
 - Disconnect during a download; verify the old build remains intact and retry works.
 - Launch offline before/after a known update; verify the policy above.
 - Start the game externally; verify updates and duplicate launches are blocked.
