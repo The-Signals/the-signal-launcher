@@ -19,6 +19,7 @@ function harness(initial, updater = { current_version: '0.1.2', available_versio
       removeAttribute(name) { delete this[name]; },
     });
   }
+  elements.set('view-folder', { disabled: true, handlers: {}, addEventListener(name, handler) { this.handlers[name] = handler; } });
   const calls = [];
   const windowCalls = [];
   const requests = [];
@@ -106,6 +107,42 @@ test('failed operation shows its error and permits checking again', async () => 
 
 const updater = { current_version: '0.1.2', available_version: '0.1.3', message: 'Launcher update available.' };
 const playable = { installed, latest: installed, check: 'online', running: false, message: 'Ready' };
+
+test('game folder opens for installed builds, including offline and running games', async () => {
+  for (const extra of [{}, { check: 'unavailable' }, { running: true }]) {
+    const h = harness({ ...playable, ...extra });
+    await flush();
+    assert.equal(h.elements.get('view-folder').disabled, false);
+    await h.elements.get('view-folder').handlers.click();
+    assert.equal(h.calls.at(-1), 'open_game_folder');
+    assert.equal(h.elements.get('status').textContent, 'Ready');
+  }
+});
+
+test('game folder is unavailable before installation and during operations', async () => {
+  const h = harness({ ...playable, installed: null });
+  await flush();
+  assert.equal(h.elements.get('view-folder').disabled, true);
+  await h.elements.get('view-folder').handlers.click();
+  assert.equal(h.calls.includes('open_game_folder'), false);
+  h.setNext(playable);
+  h.elements.get('refresh').handlers.click();
+  assert.equal(h.elements.get('view-folder').disabled, true);
+  await h.elements.get('view-folder').handlers.click();
+  assert.equal(h.calls.includes('open_game_folder'), false);
+  await flush();
+  assert.equal(h.elements.get('view-folder').disabled, false);
+});
+
+test('folder errors are visible without blocking play', async () => {
+  const h = harness(playable);
+  await flush();
+  h.setNext(new Error('File Explorer unavailable'));
+  await h.elements.get('view-folder').handlers.click();
+  assert.match(h.elements.get('status').textContent, /Could not open game folder:.*File Explorer unavailable/);
+  assert.equal(h.elements.get('view-folder').disabled, false);
+  assert.equal(h.elements.get('primary').disabled, false);
+});
 
 test('Windows inline controls minimize and request a safe close', async () => {
   const h = harness(playable);

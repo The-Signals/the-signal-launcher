@@ -236,6 +236,13 @@ impl Launcher {
         Ok(Some(installed))
     }
 
+    pub(crate) fn game_folder(&self) -> Result<PathBuf> {
+        let installed = self
+            .installation()?
+            .ok_or("Install the game before opening its folder.")?;
+        Ok(self.root.join("versions").join(installed.directory))
+    }
+
     pub(crate) fn game_running(&self) -> bool {
         let versions = self.root.join("versions");
         let versions = versions.canonicalize().unwrap_or(versions);
@@ -670,6 +677,29 @@ mod tests {
         )
         .unwrap();
         assert!(strict.installation().is_err());
+    }
+
+    #[test]
+    fn game_folder_resolves_the_active_build_and_rejects_missing_installations() {
+        let root = tempfile::tempdir().unwrap();
+        let launcher =
+            Launcher::new(root.path().into(), "ZiiMs/the-signal".into(), vec![]).unwrap();
+        assert!(launcher.game_folder().is_err());
+        let directory = root.path().join("versions/build-test");
+        fs::create_dir_all(&directory).unwrap();
+        fs::write(directory.join("The-Signal.exe"), b"exe").unwrap();
+        let mut installed = Installation {
+            manifest: manifest(),
+            directory: "build-test".into(),
+        };
+        write_json(&root.path().join("active.json"), &installed).unwrap();
+        assert_eq!(launcher.game_folder().unwrap(), directory);
+        installed.directory = "../outside".into();
+        write_json(&root.path().join("active.json"), &installed).unwrap();
+        assert!(launcher.game_folder().is_err());
+        installed.directory = "build-missing".into();
+        write_json(&root.path().join("active.json"), &installed).unwrap();
+        assert!(launcher.game_folder().is_err());
     }
 
     fn archive(root: &Path, entries: &[(&str, &[u8])]) -> PathBuf {

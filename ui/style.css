@@ -16,7 +16,10 @@ button.window-control { display: grid; place-items: center; width: 32px; height:
 h1 { font-size: 44px; letter-spacing: 5px; margin: 8px 0; }
 header p { color: #9aa69d; margin: 0 0 25px; }
 .beacon { display: inline-block; width: 9px; height: 9px; background: #e9b85b; margin: 0 0 8px 15px; box-shadow: 0 0 18px #e9b85b66; }
-.versions { display: flex; gap: 65px; padding: 18px 0; border-top: 1px solid #303a33; border-bottom: 1px solid #303a33; }
+.versions { display: flex; align-items: center; flex-wrap: wrap; gap: 16px 40px; padding: 18px 0; border-top: 1px solid #303a33; border-bottom: 1px solid #303a33; }
+.folder-button { display: inline-flex; align-items: center; gap: 7px; margin-left: auto; padding: 8px 10px; font-size: 12px; letter-spacing: 0; white-space: nowrap; }
+.folder-button svg { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 1.5; stroke-linejoin: round; }
+.folder-button:hover:not(:disabled) { background: #303a33; color: #e6e9e2; }
 .versions strong { display: block; font-size: 17px; letter-spacing: .5px; color: #e6e9e2; margin-top: 7px; }
 #status { min-height: 40px; font-size: 14px; line-height: 1.5; overflow-wrap: anywhere; }
 #status.error { color: #ffb6a6; }

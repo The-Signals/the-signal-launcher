@@ -5,6 +5,7 @@ let state;
 let busy = false;
 let launcherUpdate;
 let checkingLauncher = false;
+let openingFolder = false;
 
 function setupWindowControls() {
   if (!/Windows/i.test(navigator.userAgent)) return;
@@ -32,6 +33,7 @@ function setupWindowControls() {
 setupWindowControls();
 
 function launcherControls() {
+  el('view-folder').disabled = busy || openingFolder || !state?.installed;
   el('launcher-update').hidden = !launcherUpdate?.available_version;
   el('launcher-update').disabled = busy || checkingLauncher || state?.running || !launcherUpdate?.available_version;
   el('launcher-install').disabled = busy || checkingLauncher || state?.running;
@@ -104,6 +106,21 @@ el('refresh').addEventListener('click', async () => {
 el('primary').addEventListener('click', () => {
   const update = state.latest && (!state.installed || state.latest.sha256 !== state.installed.sha256 || state.latest.version !== state.installed.version);
   run(update ? 'install' : 'launch');
+});
+
+el('view-folder').addEventListener('click', async () => {
+  if (busy || openingFolder || !state?.installed) return;
+  openingFolder = true;
+  launcherControls();
+  try {
+    await invoke('open_game_folder');
+  } catch (error) {
+    el('status').textContent = `Could not open game folder: ${error}`;
+    el('status').classList.add('error');
+  } finally {
+    openingFolder = false;
+    launcherControls();
+  }
 });
 
 el('launcher-update').addEventListener('click', () => {
