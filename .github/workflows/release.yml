@@ -38,15 +38,15 @@ jobs:
       RELEASE_NOTES: ${{ inputs.notes }}
       RELEASE_COMMIT: ${{ github.sha }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
         with:
           fetch-depth: 0
           persist-credentials: false
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v6
         with:
           node-version: '22'
           cache: npm
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v6
         with:
           python-version: '3.12'
       - name: Install Rust
@@ -75,6 +75,8 @@ jobs:
           lock = tomllib.loads(Path('src-tauri/Cargo.lock').read_text())
           versions += [p['version'] for p in lock['package'] if p['name'] == 'the-signal-launcher']
           if any(v != version for v in versions):
+              print(f'Requested release version: {version}', flush=True)
+              print(f'Committed versions (package, npm lock, npm root, Tauri config, Cargo, Cargo lock): {versions}', flush=True)
               raise SystemExit('Update the launcher version and both lockfiles before releasing.')
           repo = json.loads(Path('distribution.json').read_text())['launcher_repository']
           if repo != os.environ['GITHUB_REPOSITORY']:
