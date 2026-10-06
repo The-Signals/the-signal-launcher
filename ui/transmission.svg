@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 900 650" preserveAspectRatio="xMidYMid slice" color="#bcc4cf">
+  <defs><linearGradient id="sky" x2="0" y2="1"><stop stop-color="currentColor" stop-opacity=".02"/><stop offset="1" stop-color="currentColor" stop-opacity=".2"/></linearGradient></defs>
+  <rect width="900" height="650" fill="url(#sky)"/>
+  <circle cx="655" cy="156" r="53" fill="currentColor" opacity=".12"/>
+  <path d="M0 350L95 250 190 295 315 188 460 302 575 226 710 300 820 218 900 276V650H0Z" fill="currentColor" opacity=".08"/>
+  <path d="M0 435L130 329 225 388 360 282 540 396 675 334 900 412V650H0Z" fill="currentColor" opacity=".12"/>
+  <path d="M0 509L126 470 225 510 400 445 610 495 755 441 900 472V650H0Z" fill="currentColor" opacity=".14"/>
+  <g stroke="currentColor" fill="none">
+    <path d="M557 463L588 219 619 463M570 364H606M578 300H598M557 463L606 364 578 300 595 252M619 463L570 364 598 300 581 252" stroke-width="3" opacity=".5"/>
+    <path d="M588 219V173M571 208H605M565 196H611" stroke-width="2" opacity=".65"/>
+    <path d="M563 165Q588 143 613 165M548 150Q588 114 628 150M533 135Q588 85 643 135" opacity=".3"/>
+  </g>
+  <circle cx="588" cy="173" r="4" fill="currentColor"/>
+</svg>

@@ -11,11 +11,14 @@
     "windows": [{
       "label": "main",
       "title": "The Signal — Playtest",
-      "width": 680,
-      "height": 680,
-      "minWidth": 560,
-      "minHeight": 480,
-      "resizable": true
+      "width": 860,
+      "height": 740,
+      "minWidth": 860,
+      "minHeight": 740,
+      "maxWidth": 860,
+      "maxHeight": 740,
+      "resizable": false,
+      "maximizable": false
     }],
     "security": {
       "csp": "default-src 'self'; script-src 'self'; style-src 'self'; connect-src ipc: http://ipc.localhost; img-src 'self' data:; object-src 'none'; base-uri 'none'; frame-src 'none'"

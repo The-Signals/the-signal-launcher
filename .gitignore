@@ -5,6 +5,7 @@
 /src-tauri/gen/
 /dist/
 /releases/
+/mockups/
 __pycache__/
 *.py[cod]
 *.log
@@ -16,6 +17,8 @@ __pycache__/
 .env.*
 
 # Editor/OS local state.
+.openchamber/
+.opencode/
 .vs/
 .idea/
 .DS_Store

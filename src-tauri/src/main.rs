@@ -102,6 +102,30 @@ async fn open_game_folder(app: tauri::AppHandle) -> Result<(), String> {
     .map_err(|e| e.to_string())?
 }
 
+#[tauri::command]
+async fn open_release_changelog(app: tauri::AppHandle) -> Result<(), String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let url = {
+            let state = app.state::<AppState>();
+            let launcher = state
+                .launcher
+                .try_lock()
+                .map_err(|_| "Another launcher operation is in progress.")?;
+            launcher.release_changelog_url()?
+        };
+        #[cfg(target_os = "windows")]
+        let mut command = std::process::Command::new("explorer.exe");
+        #[cfg(target_os = "macos")]
+        let mut command = std::process::Command::new("open");
+        #[cfg(not(any(target_os = "windows", target_os = "macos")))]
+        let mut command = std::process::Command::new("xdg-open");
+        command.arg(url).spawn().map_err(|e| e.to_string())?;
+        Ok(())
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
 fn main() {
     tauri::Builder::default()
         .plugin(tauri_plugin_updater::Builder::new().build())
@@ -153,6 +177,7 @@ fn main() {
             launch,
             local_status,
             open_game_folder,
+            open_release_changelog,
             uninstall,
             change_install_directory,
             updates::launcher_update_status,
