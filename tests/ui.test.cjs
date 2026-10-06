@@ -4,9 +4,9 @@ const vm = require('node:vm');
 const fs = require('node:fs');
 const path = require('node:path');
 
-function harness(initial, updater = { current_version: '0.1.2', available_version: null, message: 'Launcher is up to date.' }) {
+function harness(initial, updater = { current_version: '0.1.2', available_version: null, message: 'Launcher is up to date.' }, userAgent = 'Windows NT 10.0') {
   const elements = new Map();
-  for (const id of ['installed', 'latest', 'notes', 'primary', 'refresh', 'status', 'progress', 'launcher-version', 'launcher-update', 'launcher-update-status', 'launcher-update-confirm', 'launcher-confirm-text', 'launcher-install', 'launcher-later', 'launcher-progress']) {
+  for (const id of ['window-controls', 'window-minimize', 'window-close', 'window-drag', 'installed', 'latest', 'notes', 'primary', 'refresh', 'status', 'progress', 'launcher-version', 'launcher-update', 'launcher-update-status', 'launcher-update-confirm', 'launcher-confirm-text', 'launcher-install', 'launcher-later', 'launcher-progress']) {
     elements.set(id, {
       textContent: '', disabled: false, hidden: true, value: 0,
       classes: new Set(), handlers: {},
@@ -20,13 +20,20 @@ function harness(initial, updater = { current_version: '0.1.2', available_versio
     });
   }
   const calls = [];
+  const windowCalls = [];
   const requests = [];
   let next = initial;
   let launcherNext = updater;
   let installResult;
   const context = vm.createContext({
-    document: { getElementById: (id) => elements.get(id) },
+    document: { getElementById: (id) => elements.get(id), body: { classList: { add() {} } } },
+    navigator: { userAgent },
     window: { __TAURI__: {
+      window: { getCurrentWindow: () => ({
+        minimize: async () => { windowCalls.push('minimize'); },
+        close: async () => { windowCalls.push('close'); },
+        startDragging: async () => { windowCalls.push('startDragging'); },
+      }) },
       core: { invoke: async (command, args) => {
         calls.push(command); requests.push({ command, args });
         const result = command === 'launcher_update_status' ? launcherNext : command === 'install_launcher_update' ? installResult : next;
@@ -38,7 +45,7 @@ function harness(initial, updater = { current_version: '0.1.2', available_versio
     setInterval() {},
   });
   vm.runInContext(fs.readFileSync(path.join(__dirname, '../ui/app.js'), 'utf8'), context);
-  return { elements, calls, requests, context, setNext(value) { next = value; }, setUpdater(value) { launcherNext = value; }, setInstallResult(value) { installResult = value; } };
+  return { elements, calls, windowCalls, requests, context, setNext(value) { next = value; }, setUpdater(value) { launcherNext = value; }, setInstallResult(value) { installResult = value; } };
 }
 
 const installed = { version: '0.1.0', sha256: 'a', notes: 'Installed' };
@@ -99,6 +106,32 @@ test('failed operation shows its error and permits checking again', async () => 
 
 const updater = { current_version: '0.1.2', available_version: '0.1.3', message: 'Launcher update available.' };
 const playable = { installed, latest: installed, check: 'online', running: false, message: 'Ready' };
+
+test('Windows inline controls minimize and request a safe close', async () => {
+  const h = harness(playable);
+  await flush();
+  assert.equal(h.elements.get('window-controls').hidden, false);
+  await h.elements.get('window-minimize').handlers.click();
+  await h.elements.get('window-close').handlers.click();
+  assert.deepEqual(h.windowCalls, ['minimize', 'close']);
+});
+
+test('header drags only on a primary single click, never on double-click', async () => {
+  const h = harness(playable);
+  await flush();
+  const drag = h.elements.get('window-drag').handlers.pointerdown;
+  drag({ button: 0, detail: 1 });
+  drag({ button: 0, detail: 2 });
+  drag({ button: 2, detail: 1 });
+  assert.deepEqual(h.windowCalls, ['startDragging']);
+});
+
+test('other platforms retain their native window controls', async () => {
+  const h = harness(playable, undefined, 'Macintosh');
+  await flush();
+  assert.equal(h.elements.get('window-controls').hidden, true);
+  assert.equal(h.elements.get('window-drag').handlers.pointerdown, undefined);
+});
 
 test('launcher update is optional and requires explicit confirmation', async () => {
   const h = harness(playable, updater);

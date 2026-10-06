@@ -1,7 +1,16 @@
 :root { color-scheme: dark; font-family: "Segoe UI", sans-serif; background: #111514; color: #e6e9e2; }
 * { box-sizing: border-box; }
 body { margin: 0; }
+[hidden] { display: none !important; }
 main { max-width: 780px; margin: auto; padding: 32px 38px; }
+.header-row { display: flex; align-items: center; gap: 16px; min-height: 28px; }
+#window-drag { flex: 1; align-self: stretch; display: flex; align-items: center; }
+.custom-window #window-drag { user-select: none; cursor: grab; }
+.window-controls { display: flex; gap: 4px; }
+button.window-control { display: grid; place-items: center; width: 32px; height: 28px; padding: 0; background: transparent; border: 0; color: #9aa69d; }
+.window-control svg { width: 12px; height: 12px; fill: none; stroke: currentColor; stroke-width: 1; }
+.window-control:hover:not(:disabled) { background: #303a33; color: #e6e9e2; }
+#window-close:hover { background: #a33232; color: white; }
 .eyebrow, h2, .versions, footer { font-size: 11px; letter-spacing: 1.6px; color: #9aa69d; }
 h1 { font-size: 44px; letter-spacing: 5px; margin: 8px 0; }
 header p { color: #9aa69d; margin: 0 0 25px; }

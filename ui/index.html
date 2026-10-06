@@ -9,7 +9,17 @@
 </head>
 <body>
   <main>
-    <header><span class="eyebrow">PLAYTEST TRANSMISSION</span><h1>THE SIGNAL<span class="beacon" aria-hidden="true"></span></h1><p>Install. Tune in. Survive.</p></header>
+    <header>
+      <div class="header-row">
+        <div id="window-drag"><span class="eyebrow">PLAYTEST TRANSMISSION</span></div>
+        <div id="window-controls" class="window-controls" hidden role="group" aria-label="Window controls">
+          <button id="window-minimize" class="window-control" aria-label="Minimize" title="Minimize"><svg viewBox="0 0 12 12" aria-hidden="true"><path d="M1 6h10"/></svg></button>
+          <button class="window-control" disabled aria-label="Maximize (unavailable)" title="Maximize is disabled"><svg viewBox="0 0 12 12" aria-hidden="true"><path d="M1.5 1.5h9v9h-9z"/></svg></button>
+          <button id="window-close" class="window-control" aria-label="Close" title="Close"><svg viewBox="0 0 12 12" aria-hidden="true"><path d="m1 1 10 10M11 1 1 11"/></svg></button>
+        </div>
+      </div>
+      <h1>THE SIGNAL<span class="beacon" aria-hidden="true"></span></h1><p>Install. Tune in. Survive.</p>
+    </header>
     <section class="versions" aria-label="Build versions"><div>INSTALLED<strong id="installed">—</strong></div><div>LATEST<strong id="latest">—</strong></div></section>
     <p id="status" role="status" aria-live="polite">Checking for a transmission…</p>
     <progress id="progress" max="100" value="0" hidden aria-label="Installation progress"></progress>

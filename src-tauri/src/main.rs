@@ -59,6 +59,14 @@ fn main() {
             }
         }))
         .setup(|app| {
+            #[cfg(target_os = "windows")]
+            if let Some(window) = app.get_webview_window("main") {
+                // A fixed, undecorated launcher cannot maximize via dragging,
+                // double-clicking the header, or the Windows system menu.
+                window.set_resizable(false)?;
+                window.set_maximizable(false)?;
+                window.set_decorations(false)?;
+            }
             #[derive(serde::Deserialize)]
             struct Distribution {
                 repository: String,

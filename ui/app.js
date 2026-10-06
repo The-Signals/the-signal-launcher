@@ -6,6 +6,28 @@ let busy = false;
 let launcherUpdate;
 let checkingLauncher = false;
 
+function setupWindowControls() {
+  if (!/Windows/i.test(navigator.userAgent)) return;
+  const launcherWindow = window.__TAURI__.window.getCurrentWindow();
+  document.body.classList.add('custom-window');
+  el('window-controls').hidden = false;
+  const windowAction = async (action) => {
+    try { await action(); } catch (error) {
+      el('status').textContent = `Window action failed: ${error}`;
+    }
+  };
+  el('window-minimize').addEventListener('click', () => windowAction(() => launcherWindow.minimize()));
+  // close(), not destroy(), preserves the backend's protection during updates.
+  el('window-close').addEventListener('click', () => windowAction(() => launcherWindow.close()));
+  el('window-drag').addEventListener('pointerdown', (event) => {
+    if (event.button === 0 && event.detail === 1) {
+      windowAction(() => launcherWindow.startDragging());
+    }
+  });
+}
+
+setupWindowControls();
+
 function launcherControls() {
   el('launcher-update').hidden = !launcherUpdate?.available_version;
   el('launcher-update').disabled = busy || checkingLauncher || state?.running || !launcherUpdate?.available_version;
