@@ -66,10 +66,24 @@ pub struct Launcher {
     latest: Option<Manifest>,
     check: CheckState,
     message: String,
+    cleanup_warning: Option<String>,
 }
 
 fn io_error(error: impl std::fmt::Display) -> String {
     error.to_string()
+}
+
+fn is_link(metadata: &fs::Metadata) -> bool {
+    #[cfg(windows)]
+    {
+        use std::os::windows::fs::MetadataExt;
+        // Includes directory junctions as well as symbolic links.
+        metadata.file_attributes() & 0x400 != 0
+    }
+    #[cfg(not(windows))]
+    {
+        metadata.file_type().is_symlink()
+    }
 }
 
 // Windows rejects more paths than ZIP's traversal check does. Reject ambiguous
@@ -191,14 +205,21 @@ impl Launcher {
             .ok()
             .and_then(|bytes| serde_json::from_slice::<Manifest>(&bytes).ok())
             .filter(|m| m.validate(&repository).is_ok());
-        Ok(Self {
+        let mut launcher = Self {
             root,
             repository,
             previous_repositories,
             latest,
             check: CheckState::Unavailable,
             message: "Not checked yet.".into(),
-        })
+            cleanup_warning: None,
+        };
+        // Retry interrupted/locked cleanup and migrate accumulated old builds.
+        // Never clean without a validated working install, or while a game runs.
+        if launcher.installation().ok().flatten().is_some() && !launcher.game_running() {
+            launcher.finish_cleanup();
+        }
+        Ok(launcher)
     }
 
     fn installation(&self) -> Result<Option<Installation>> {
@@ -262,7 +283,10 @@ impl Launcher {
             latest: self.latest.clone(),
             check: self.check,
             running: self.game_running(),
-            message: self.message.clone(),
+            message: match &self.cleanup_warning {
+                Some(warning) => format!("{} {warning}", self.message),
+                None => self.message.clone(),
+            },
         })
     }
 
@@ -347,6 +371,7 @@ impl Launcher {
             .installation()?
             .is_some_and(|i| i.manifest.matches(&manifest))
         {
+            self.finish_cleanup();
             return self.status();
         }
         let disks = sysinfo::Disks::new_with_refreshed_list();
@@ -427,6 +452,11 @@ impl Launcher {
         if self.game_running() {
             return Err("The game was started during installation. Close it and retry.".into());
         }
+        self.commit_install(stage, manifest)?;
+        self.status()
+    }
+
+    fn commit_install(&mut self, stage: tempfile::TempDir, manifest: Manifest) -> Result<()> {
         // The staged directory is immutable once published. No current files are
         // overwritten; an interrupted update cannot invalidate active.json.
         let directory = stage
@@ -445,8 +475,63 @@ impl Launcher {
             let _ = fs::remove_dir_all(retained_path);
             return Err(error);
         }
+        // Never delete old builds until the new active pointer is committed.
+        self.finish_cleanup();
+        Ok(())
+    }
+
+    fn finish_cleanup(&mut self) {
         self.message = "Installed successfully. Ready to play.".into();
-        self.status()
+        self.cleanup_warning = match self.cleanup_previous_builds() {
+            Ok(()) => None,
+            Err(error) => Some(format!(
+                "Previous builds could not all be removed: {error}. Close any programs using those folders and restart the launcher to retry cleanup."
+            )),
+        };
+    }
+
+    fn cleanup_previous_builds(&self) -> Result<()> {
+        // Resolve and validate the on-disk pointer, not the last downloaded manifest.
+        let Some(installed) = self.installation()? else {
+            return Ok(());
+        };
+        if self.game_running() {
+            return Err("The Signal is running".into());
+        }
+        let versions = self.root.join("versions");
+        if is_link(&fs::symlink_metadata(&versions).map_err(io_error)?) {
+            return Err("The versions folder is a link; cleanup was skipped".into());
+        }
+        let mut failures = Vec::new();
+        for entry in fs::read_dir(versions).map_err(io_error)? {
+            let result = (|| -> Result<()> {
+                let entry = entry.map_err(io_error)?;
+                let name = entry.file_name();
+                let Some(name) = name.to_str() else {
+                    return Ok(());
+                };
+                if name.eq_ignore_ascii_case(&installed.directory)
+                    || !name.starts_with("build-")
+                    || safe_path(name).is_err()
+                {
+                    return Ok(());
+                }
+                let metadata = fs::symlink_metadata(entry.path()).map_err(io_error)?;
+                // Leave unrelated files and links alone; never traverse a junction.
+                if metadata.is_dir() && !is_link(&metadata) {
+                    fs::remove_dir_all(entry.path()).map_err(|error| format!("{name}: {error}"))?;
+                }
+                Ok(())
+            })();
+            if let Err(error) = result {
+                failures.push(error);
+            }
+        }
+        if failures.is_empty() {
+            Ok(())
+        } else {
+            Err(failures.join("; "))
+        }
     }
 
     pub fn launch(&mut self) -> Result<Status> {
@@ -700,6 +785,196 @@ mod tests {
         installed.directory = "build-missing".into();
         write_json(&root.path().join("active.json"), &installed).unwrap();
         assert!(launcher.game_folder().is_err());
+    }
+
+    fn build(root: &Path, name: &str) -> PathBuf {
+        let directory = root.join("versions").join(name);
+        fs::create_dir_all(directory.join("The-Signal_Data/Managed")).unwrap();
+        fs::write(directory.join("The-Signal.exe"), b"exe").unwrap();
+        fs::write(directory.join("The-Signal_Data/Managed/game.dll"), b"data").unwrap();
+        directory
+    }
+
+    #[test]
+    fn successful_install_removes_all_old_builds_but_preserves_unrelated_data() {
+        let root = tempfile::tempdir().unwrap();
+        let mut launcher =
+            Launcher::new(root.path().into(), "ZiiMs/the-signal".into(), vec![]).unwrap();
+        let old = build(root.path(), "build-old");
+        let orphan = build(root.path(), "build-orphan");
+        let unrelated = build(root.path(), "personal-files");
+        let file = root.path().join("versions/build-not-a-directory");
+        fs::write(&file, b"keep").unwrap();
+        let save = root.path().join("save.dat");
+        fs::write(&save, b"save").unwrap();
+        write_json(
+            &root.path().join("active.json"),
+            &Installation {
+                manifest: manifest(),
+                directory: "build-old".into(),
+            },
+        )
+        .unwrap();
+        let stage = tempfile::Builder::new()
+            .prefix("build-")
+            .tempdir_in(root.path().join("versions"))
+            .unwrap();
+        fs::write(stage.path().join("The-Signal.exe"), b"new").unwrap();
+        let active = stage.path().to_path_buf();
+        let mut next = manifest();
+        next.version = "0.2.0".into();
+        launcher.commit_install(stage, next).unwrap();
+        assert!(!old.exists());
+        assert!(!orphan.exists());
+        assert!(unrelated.exists());
+        assert!(file.exists());
+        assert_eq!(fs::read(save).unwrap(), b"save");
+        assert_eq!(launcher.game_folder().unwrap(), active);
+        assert_eq!(fs::read(active.join("The-Signal.exe")).unwrap(), b"new");
+        assert_eq!(
+            launcher.installation().unwrap().unwrap().manifest.version,
+            "0.2.0"
+        );
+        launcher.cleanup_previous_builds().unwrap();
+        assert!(active.exists());
+    }
+
+    #[test]
+    fn failed_pointer_commit_does_not_clean_old_builds() {
+        let root = tempfile::tempdir().unwrap();
+        let mut launcher =
+            Launcher::new(root.path().into(), "ZiiMs/the-signal".into(), vec![]).unwrap();
+        let old = build(root.path(), "build-old");
+        // A directory at the pointer path prevents atomic replacement.
+        fs::create_dir(root.path().join("active.json")).unwrap();
+        let stage = tempfile::Builder::new()
+            .prefix("build-")
+            .tempdir_in(root.path().join("versions"))
+            .unwrap();
+        let staged_path = stage.path().to_path_buf();
+        assert!(launcher.commit_install(stage, manifest()).is_err());
+        assert!(!staged_path.exists());
+        assert_eq!(fs::read(old.join("The-Signal.exe")).unwrap(), b"exe");
+    }
+
+    #[test]
+    fn cleanup_requires_a_valid_working_active_build() {
+        let root = tempfile::tempdir().unwrap();
+        let launcher =
+            Launcher::new(root.path().into(), "ZiiMs/the-signal".into(), vec![]).unwrap();
+        let old = build(root.path(), "build-old");
+        launcher.cleanup_previous_builds().unwrap();
+        assert!(old.exists());
+        for directory in ["../outside", "build-missing"] {
+            write_json(
+                &root.path().join("active.json"),
+                &Installation {
+                    manifest: manifest(),
+                    directory: directory.into(),
+                },
+            )
+            .unwrap();
+            assert!(launcher.cleanup_previous_builds().is_err());
+            assert!(old.exists());
+        }
+    }
+
+    #[test]
+    fn startup_cleans_accumulated_builds_and_preserves_active_build() {
+        let root = tempfile::tempdir().unwrap();
+        let active = build(root.path(), "build-active");
+        let old = build(root.path(), "build-old");
+        write_json(
+            &root.path().join("active.json"),
+            &Installation {
+                manifest: manifest(),
+                directory: "build-active".into(),
+            },
+        )
+        .unwrap();
+        let launcher =
+            Launcher::new(root.path().into(), "ZiiMs/the-signal".into(), vec![]).unwrap();
+        assert_eq!(launcher.game_folder().unwrap(), active);
+        assert!(!old.exists());
+    }
+
+    #[test]
+    fn cleanup_does_not_follow_directory_links() {
+        let root = tempfile::tempdir().unwrap();
+        let outside = tempfile::tempdir().unwrap();
+        fs::write(outside.path().join("keep.dat"), b"keep").unwrap();
+        let launcher =
+            Launcher::new(root.path().into(), "ZiiMs/the-signal".into(), vec![]).unwrap();
+        build(root.path(), "build-active");
+        write_json(
+            &root.path().join("active.json"),
+            &Installation {
+                manifest: manifest(),
+                directory: "build-active".into(),
+            },
+        )
+        .unwrap();
+        let link = root.path().join("versions").join("build-link");
+        #[cfg(windows)]
+        {
+            let output = Command::new("cmd")
+                .args(["/C", "mklink", "/J"])
+                .arg(&link)
+                .arg(outside.path())
+                .output()
+                .unwrap();
+            assert!(output.status.success(), "{output:?}");
+        }
+        #[cfg(unix)]
+        std::os::unix::fs::symlink(outside.path(), &link).unwrap();
+        launcher.cleanup_previous_builds().unwrap();
+        assert!(fs::symlink_metadata(&link).is_ok());
+        assert_eq!(fs::read(outside.path().join("keep.dat")).unwrap(), b"keep");
+        // Explicitly remove only the test link before temporary-directory teardown.
+        #[cfg(windows)]
+        fs::remove_dir(link).unwrap();
+        #[cfg(unix)]
+        fs::remove_file(link).unwrap();
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn locked_old_build_warns_without_undoing_install_and_retries_on_startup() {
+        use std::os::windows::fs::OpenOptionsExt;
+        let root = tempfile::tempdir().unwrap();
+        let mut launcher =
+            Launcher::new(root.path().into(), "ZiiMs/the-signal".into(), vec![]).unwrap();
+        let old = build(root.path(), "build-old");
+        let locked = fs::OpenOptions::new()
+            .read(true)
+            .share_mode(0)
+            .open(old.join("The-Signal.exe"))
+            .unwrap();
+        let stage = tempfile::Builder::new()
+            .prefix("build-")
+            .tempdir_in(root.path().join("versions"))
+            .unwrap();
+        fs::write(stage.path().join("The-Signal.exe"), b"new").unwrap();
+        let active = stage.path().to_path_buf();
+        launcher.commit_install(stage, manifest()).unwrap();
+        assert_eq!(launcher.game_folder().unwrap(), active);
+        assert!(launcher
+            .status()
+            .unwrap()
+            .message
+            .contains("could not all be removed"));
+        launcher.message = "You are tuned to the latest build.".into();
+        assert!(launcher
+            .status()
+            .unwrap()
+            .message
+            .contains("could not all be removed"));
+        assert!(old.exists());
+        drop(locked);
+        let restarted =
+            Launcher::new(root.path().into(), "ZiiMs/the-signal".into(), vec![]).unwrap();
+        assert!(!old.exists());
+        assert_eq!(restarted.game_folder().unwrap(), active);
     }
 
     fn archive(root: &Path, entries: &[(&str, &[u8])]) -> PathBuf {
