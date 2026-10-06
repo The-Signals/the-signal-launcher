@@ -1,0 +1,28 @@
+:root { color-scheme: dark; font-family: "Segoe UI", sans-serif; background: #111514; color: #e6e9e2; }
+* { box-sizing: border-box; }
+body { margin: 0; }
+main { max-width: 780px; margin: auto; padding: 32px 38px; }
+.eyebrow, h2, .versions, footer { font-size: 11px; letter-spacing: 1.6px; color: #9aa69d; }
+h1 { font-size: 44px; letter-spacing: 5px; margin: 8px 0; }
+header p { color: #9aa69d; margin: 0 0 25px; }
+.beacon { display: inline-block; width: 9px; height: 9px; background: #e9b85b; margin: 0 0 8px 15px; box-shadow: 0 0 18px #e9b85b66; }
+.versions { display: flex; gap: 65px; padding: 18px 0; border-top: 1px solid #303a33; border-bottom: 1px solid #303a33; }
+.versions strong { display: block; font-size: 17px; letter-spacing: .5px; color: #e6e9e2; margin-top: 7px; }
+#status { min-height: 40px; font-size: 14px; line-height: 1.5; overflow-wrap: anywhere; }
+#status.error { color: #ffb6a6; }
+progress { width: 100%; height: 8px; accent-color: #e9b85b; margin-bottom: 15px; }
+.actions { display: flex; gap: 12px; }
+button { font: inherit; font-weight: 600; border: 1px solid #e9b85b; padding: 12px 24px; background: #e9b85b; color: #161914; cursor: pointer; border-radius: 3px; }
+button.secondary { background: transparent; color: #c3cec5; border-color: #465349; }
+button:disabled { opacity: .45; cursor: default; }
+button:focus-visible { outline: 2px solid white; outline-offset: 4px; }
+.notes { margin-top: 24px; }
+#notes { font-size: 13px; color: #bcc6be; line-height: 1.6; white-space: pre-wrap; max-height: 130px; overflow-y: auto; overflow-wrap: anywhere; }
+footer { font-size: 10px; letter-spacing: .4px; margin-top: 22px; }
+.launcher-update { border-top: 1px solid #303a33; margin-top: 24px; padding-top: 16px; }
+.launcher-heading { display: flex; align-items: center; gap: 10px; font-size: 11px; letter-spacing: 1.4px; color: #9aa69d; }
+.launcher-heading button { margin-left: auto; padding: 8px 12px; letter-spacing: 0; font-size: 12px; }
+.launcher-update p { font-size: 12px; color: #bcc6be; line-height: 1.5; overflow-wrap: anywhere; }
+#launcher-update-confirm { padding: 12px; background: #1d261f; border: 1px solid #465349; margin-bottom: 12px; }
+#launcher-update-confirm p { margin-top: 0; }
+#launcher-progress { margin-top: 10px; }

@@ -1,0 +1,16 @@
+{
+  "name": "the-signal-launcher",
+  "version": "0.1.2",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "tauri dev",
+    "build": "pwsh -NoProfile -File scripts/build-launcher.ps1",
+    "test": "cargo test --manifest-path src-tauri/Cargo.toml",
+    "test:ui": "node --test tests/ui.test.cjs",
+    "check": "cargo check --manifest-path src-tauri/Cargo.toml"
+  },
+  "devDependencies": {
+    "@tauri-apps/cli": "^2.0.0"
+  }
+}

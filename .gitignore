@@ -1,0 +1,22 @@
+# Dependencies, generated schemas and build output.
+/node_modules/
+/src-tauri/target/
+/src-tauri/target-before-move/
+/src-tauri/gen/
+/dist/
+/releases/
+__pycache__/
+*.py[cod]
+*.log
+
+# Signing secrets must stay outside this repository.
+*.key
+*.key.pub
+.env
+.env.*
+
+# Editor/OS local state.
+.vs/
+.idea/
+.DS_Store
+Thumbs.db
