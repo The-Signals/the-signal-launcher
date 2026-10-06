@@ -198,7 +198,8 @@ and Rust tests locally using the commands in **Develop and build**.
 Run workflow**. It builds and verifies the signed installer, then publishes
 the installer, `.sig`, and `latest.json` using the existing publisher. No Unity builds
 are uploaded. Releases are restricted to `main` in the launcher repository, and the
-version tag targets the exact commit built, not a newer commit pushed during the run.
+version tag targets the selected source commit, not a newer commit pushed during the
+run. The requested version is applied to that checkout before building.
 
 One-time GitHub setup:
 
@@ -223,12 +224,15 @@ For that case, create a fine-grained personal access token restricted to
 if required. Store it as environment secret **`RELEASE_TOKEN`** in `release`.
 The workflow uses that token when present; never commit it or paste it into chat.
 
-For each release, commit a new matching version in `package.json`,
-`src-tauri/Cargo.toml`, and `src-tauri/tauri.conf.json`, and update both lockfiles
-(`npm install --package-lock-only` and `cargo check --manifest-path src-tauri/Cargo.toml`).
-Push to `main`, run the release workflow on `main`, and supply that version plus
-release notes. The workflow refuses to overwrite published versions or reuse a tag
-pointing at a different commit. **0.1.2 is already released; use a newer version.**
+For each release, push your code to `main`, run the release workflow on `main`, and
+enter a new version plus release notes. `scripts/set_launcher_version.py` automatically
+updates `package.json`, `src-tauri/Cargo.toml`, `src-tauri/tauri.conf.json`, and both
+lockfiles on the runner before building. **No local version bump is required.**
+These version changes are build-only: the workflow does not commit or push them to
+`main`. Reproduce a release locally by checking out its tag and running
+`python scripts/set_launcher_version.py <version>` before building.
+The workflow still checks the destination repository and refuses to overwrite
+published versions or reuse a tag pointing at a different source commit.
 Failed uploads remain drafts; the existing publisher's asset checksum/retry rules
 still apply. Rebuilding can produce different bytes, so a conflicting draft asset
 may need manual removal before a retry. The original local publishing commands
