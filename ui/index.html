@@ -23,7 +23,7 @@
     <section class="versions" aria-label="Build versions"><div>INSTALLED<strong id="installed">—</strong></div><div>LATEST<strong id="latest">—</strong></div><button id="view-folder" class="secondary folder-button" disabled title="Open the installed game folder"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 7V5h6l2 2h10v12H3Z"/></svg>View game folder</button></section>
     <p id="status" role="status" aria-live="polite">Checking for a transmission…</p>
     <progress id="progress" max="100" value="0" hidden aria-label="Installation progress"></progress>
-    <div class="actions"><button id="primary" disabled>Checking…</button><button id="refresh" class="secondary" disabled>Check again</button></div>
+    <div class="actions"><button id="primary" disabled>Checking…</button><button id="refresh" class="secondary" disabled>Check again</button><button id="game-settings" class="secondary cog-button" disabled aria-label="Game settings" title="Game settings" aria-haspopup="dialog" aria-controls="settings-dialog"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9.5 3-.6 2.4-1.5.9-2.4-.7-2.5 4.3 1.8 1.7v1.8l-1.8 1.7 2.5 4.3 2.4-.7 1.5.9.6 2.4h5l.6-2.4 1.5-.9 2.4.7 2.5-4.3-1.8-1.7v-1.8l1.8-1.7L19 5.3l-2.4.7-1.5-.9-.6-2.4Z"/><circle cx="12" cy="12" r="3.5"/></svg></button></div>
     <section class="launcher-update" aria-label="Launcher updates">
       <div class="launcher-heading">LAUNCHER <span id="launcher-version">—</span><button id="launcher-update" class="secondary" hidden>Update launcher</button></div>
       <p id="launcher-update-status" role="status" aria-live="polite">Checking launcher updates…</p>
@@ -36,5 +36,16 @@
     <section class="notes"><h2>RELEASE NOTES</h2><p id="notes">No release notes yet.</p></section>
     <footer>Public playtest · Updates required when available · Offline play supported</footer>
   </main>
+  <div id="settings-dialog" class="modal-backdrop" hidden>
+    <section class="settings-panel" role="dialog" aria-modal="true" aria-labelledby="settings-title">
+      <div class="settings-heading"><h2 id="settings-title">GAME SETTINGS</h2><button id="settings-close" class="secondary" aria-label="Close game settings">✕</button></div>
+      <p class="settings-label">INSTALL DIRECTORY</p><p id="install-directory" class="directory-path">—</p>
+      <p class="settings-help">Choose a location for the game. A “The Signal” folder will be created there. An installed game will be moved without downloading it again.</p>
+      <button id="change-directory" class="secondary">Change install directory</button>
+      <p id="settings-status" role="status" aria-live="polite"></p>
+      <div class="uninstall-section"><button id="uninstall-game" class="secondary danger">Uninstall game</button><p class="settings-help">Removes launcher-managed game builds, not the launcher or saves stored outside the game folder.</p></div>
+      <div id="uninstall-confirm" hidden><p>Uninstall The Signal? Files inside the game builds will be deleted. This cannot be undone.</p><div class="actions"><button id="confirm-uninstall" class="danger">Uninstall</button><button id="cancel-uninstall" class="secondary">Cancel</button></div></div>
+    </section>
+  </div>
 </body>
 </html>

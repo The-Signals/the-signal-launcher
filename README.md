@@ -110,6 +110,24 @@ on GitHub before retrying; published assets are never replaced. Only completed
 game releases should be marked latest in the **data repo**. Launcher releases
 are marked latest in the separate **launcher repo**, never in the data repo.
 
+## Game settings
+
+The cogwheel beside **Check again** opens game settings:
+
+- **Change install directory** opens a folder picker and creates a dedicated
+  `The Signal` folder there. The folder must be empty; existing files are never
+  overwritten. Installed game files are copied to the new location before the
+  saved directory switches, then the original active build is removed. This also
+  works before installing and supports moving between drives.
+- **Uninstall game** requires confirmation and removes launcher-managed builds.
+  It keeps the launcher, the selected directory, and unrelated files. Saves outside
+  the game builds are untouched; custom files inside those builds are removed.
+- Close the game before moving or uninstalling. These operations share the update
+  lock, and the launcher cannot close while an operation is in progress.
+
+The selected directory is stored in `launcher-settings.json` in the launcher's
+per-user local data directory, separately from the game installation.
+
 ## Signed launcher updates
 
 Feed: `https://github.com/The-Signals/the-signal-launcher/releases/latest/download/latest.json`.

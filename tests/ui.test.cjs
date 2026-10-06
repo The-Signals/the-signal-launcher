@@ -6,7 +6,7 @@ const path = require('node:path');
 
 function harness(initial, updater = { current_version: '0.1.2', available_version: null, message: 'Launcher is up to date.' }, userAgent = 'Windows NT 10.0') {
   const elements = new Map();
-  for (const id of ['window-controls', 'window-minimize', 'window-close', 'window-drag', 'installed', 'latest', 'notes', 'primary', 'refresh', 'status', 'progress', 'launcher-version', 'launcher-update', 'launcher-update-status', 'launcher-update-confirm', 'launcher-confirm-text', 'launcher-install', 'launcher-later', 'launcher-progress']) {
+  for (const id of ['game-settings', 'settings-dialog', 'settings-close', 'settings-status', 'install-directory', 'change-directory', 'uninstall-game', 'uninstall-confirm', 'confirm-uninstall', 'cancel-uninstall', 'window-controls', 'window-minimize', 'window-close', 'window-drag', 'installed', 'latest', 'notes', 'primary', 'refresh', 'status', 'progress', 'launcher-version', 'launcher-update', 'launcher-update-status', 'launcher-update-confirm', 'launcher-confirm-text', 'launcher-install', 'launcher-later', 'launcher-progress']) {
     elements.set(id, {
       textContent: '', disabled: false, hidden: true, value: 0,
       classes: new Set(), handlers: {},
@@ -17,6 +17,7 @@ function harness(initial, updater = { current_version: '0.1.2', available_versio
       },
       addEventListener(name, handler) { this.handlers[name] = handler; },
       removeAttribute(name) { delete this[name]; },
+      focus() { context.document.activeElement = this; },
     });
   }
   elements.set('view-folder', { disabled: true, handlers: {}, addEventListener(name, handler) { this.handlers[name] = handler; } });
@@ -27,7 +28,7 @@ function harness(initial, updater = { current_version: '0.1.2', available_versio
   let launcherNext = updater;
   let installResult;
   const context = vm.createContext({
-    document: { getElementById: (id) => elements.get(id), body: { classList: { add() {} } } },
+    document: { getElementById: (id) => elements.get(id), handlers: {}, addEventListener(name, handler) { this.handlers[name] = handler; }, body: { classList: { add() {} } } },
     navigator: { userAgent },
     window: { __TAURI__: {
       window: { getCurrentWindow: () => ({
@@ -107,6 +108,77 @@ test('failed operation shows its error and permits checking again', async () => 
 
 const updater = { current_version: '0.1.2', available_version: '0.1.3', message: 'Launcher update available.' };
 const playable = { installed, latest: installed, check: 'online', running: false, message: 'Ready' };
+
+test('cogwheel opens settings with the current directory and Escape restores focus', async () => {
+  const h = harness({ ...playable, install_directory: 'D:\\Games\\The Signal' });
+  await flush();
+  h.elements.get('game-settings').handlers.click();
+  assert.equal(h.elements.get('settings-dialog').hidden, false);
+  assert.equal(h.elements.get('install-directory').textContent, 'D:\\Games\\The Signal');
+  assert.equal(h.context.document.activeElement, h.elements.get('settings-close'));
+  h.context.document.handlers.keydown({ key: 'Escape' });
+  assert.equal(h.elements.get('settings-dialog').hidden, true);
+  assert.equal(h.context.document.activeElement, h.elements.get('game-settings'));
+});
+
+test('uninstall requires confirmation and cancellation does not uninstall', async () => {
+  const h = harness(playable);
+  await flush();
+  h.elements.get('game-settings').handlers.click();
+  await h.elements.get('confirm-uninstall').handlers.click();
+  assert.equal(h.calls.includes('uninstall'), false);
+  h.elements.get('uninstall-game').handlers.click();
+  assert.equal(h.elements.get('uninstall-confirm').hidden, false);
+  h.elements.get('cancel-uninstall').handlers.click();
+  assert.equal(h.calls.includes('uninstall'), false);
+  h.elements.get('uninstall-game').handlers.click();
+  h.setNext({ ...playable, installed: null, message: 'Uninstalled' });
+  const action = h.elements.get('confirm-uninstall').handlers.click();
+  assert.equal(h.elements.get('game-settings').disabled, true);
+  assert.equal(h.elements.get('settings-close').disabled, true);
+  await action;
+  assert.equal(h.calls.at(-1), 'uninstall');
+  assert.equal(h.elements.get('primary').textContent, 'Install');
+  assert.equal(h.elements.get('uninstall-game').disabled, true);
+  assert.equal(h.elements.get('uninstall-confirm').hidden, true);
+});
+
+test('directory changes work before installation and errors remain visible', async () => {
+  const h = harness({ ...playable, installed: null });
+  await flush();
+  assert.equal(h.elements.get('change-directory').disabled, false);
+  h.setNext(new Error('Destination must be empty'));
+  await h.elements.get('change-directory').handlers.click();
+  assert.ok(h.calls.includes('change_install_directory'));
+  assert.match(h.elements.get('settings-status').textContent, /Destination must be empty/);
+  assert.equal(h.elements.get('change-directory').disabled, false);
+});
+
+test('running games block moving and uninstalling but settings can still be viewed', async () => {
+  const h = harness({ ...playable, running: true });
+  await flush();
+  h.elements.get('game-settings').handlers.click();
+  assert.equal(h.elements.get('settings-dialog').hidden, false);
+  assert.equal(h.elements.get('change-directory').disabled, true);
+  assert.equal(h.elements.get('uninstall-game').disabled, true);
+  await h.elements.get('change-directory').handlers.click();
+  h.elements.get('uninstall-game').handlers.click();
+  await h.elements.get('confirm-uninstall').handlers.click();
+  assert.equal(h.calls.includes('change_install_directory'), false);
+  assert.equal(h.calls.includes('uninstall'), false);
+});
+
+test('settings traps keyboard focus', async () => {
+  const h = harness(playable);
+  await flush();
+  h.elements.get('game-settings').handlers.click();
+  let prevented = 0;
+  h.context.document.handlers.keydown({ key: 'Tab', shiftKey: true, preventDefault() { prevented++; } });
+  assert.equal(h.context.document.activeElement, h.elements.get('uninstall-game'));
+  h.context.document.handlers.keydown({ key: 'Tab', shiftKey: false, preventDefault() { prevented++; } });
+  assert.equal(h.context.document.activeElement, h.elements.get('settings-close'));
+  assert.equal(prevented, 2);
+});
 
 test('game folder opens for installed builds, including offline and running games', async () => {
   for (const extra of [{}, { check: 'unavailable' }, { running: true }]) {

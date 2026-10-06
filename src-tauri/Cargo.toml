@@ -18,6 +18,7 @@ sha2 = "0.10"
 zip = { version = "2", default-features = false, features = ["deflate"] }
 tempfile = "3"
 sysinfo = "0.33"
+rfd = "0.15"
 
 [dev-dependencies]
 base64 = "0.22"

@@ -33,6 +33,12 @@ function setupWindowControls() {
 setupWindowControls();
 
 function launcherControls() {
+  el('game-settings').disabled = busy || !state;
+  el('change-directory').disabled = busy || !state || state.running;
+  el('uninstall-game').disabled = busy || !state?.installed || state.running;
+  el('confirm-uninstall').disabled = busy || !state?.installed || state.running;
+  el('cancel-uninstall').disabled = busy;
+  el('settings-close').disabled = busy;
   el('view-folder').disabled = busy || openingFolder || !state?.installed;
   el('launcher-update').hidden = !launcherUpdate?.available_version;
   el('launcher-update').disabled = busy || checkingLauncher || state?.running || !launcherUpdate?.available_version;
@@ -60,6 +66,8 @@ async function checkLauncherUpdate() {
 
 function render(next) {
   state = next;
+  el('install-directory').textContent = next.install_directory ?? 'Default game directory';
+  if (next.running && !el('settings-dialog').hidden) el('settings-status').textContent = 'Close The Signal before moving or uninstalling it.';
   el('installed').textContent = next.installed?.version ?? 'Not installed';
   el('latest').textContent = next.latest?.version ?? 'Unavailable';
   el('notes').textContent = next.latest?.notes || next.installed?.notes || 'No release notes yet.';
@@ -72,7 +80,7 @@ function render(next) {
   launcherControls();
 }
 
-async function run(command) {
+async function run(command, args) {
   if (busy) return;
   busy = true;
   el('primary').disabled = true;
@@ -80,16 +88,20 @@ async function run(command) {
   el('launcher-update-confirm').hidden = true;
   launcherControls();
   el('status').classList.remove('error');
-  el('status').textContent = command === 'install' ? 'Preparing download…' : command === 'launch' ? 'Checking before launch…' : 'Checking for updates…';
+  const message = command === 'change_install_directory' ? 'Choose a location. Moving the game may take a moment…' : command === 'uninstall' ? 'Uninstalling game…' : command === 'install' ? 'Preparing download…' : command === 'launch' ? 'Checking before launch…' : 'Checking for updates…';
+  el('status').textContent = message;
+  el('settings-status').textContent = message;
   try {
-    const next = await invoke(command);
+    const next = await invoke(command, args);
     busy = false;
     render(next);
+    el('settings-status').textContent = next.message;
   } catch (error) {
     busy = false;
     // Refresh local status without silently re-enabling Play against a failed check.
     try { render(await invoke('local_status')); } catch { /* Keep the original error visible. */ }
     el('status').textContent = String(error);
+    el('settings-status').textContent = String(error);
     el('status').classList.add('error');
     el('refresh').disabled = false;
   } finally {
@@ -97,6 +109,49 @@ async function run(command) {
     launcherControls();
   }
 }
+
+function closeSettings() {
+  if (busy) return;
+  el('settings-dialog').hidden = true;
+  el('uninstall-confirm').hidden = true;
+  el('game-settings').focus();
+}
+el('game-settings').addEventListener('click', () => {
+  if (busy || !state) return;
+  el('settings-dialog').hidden = false;
+  el('uninstall-confirm').hidden = true;
+  el('settings-status').textContent = state.running ? 'Close The Signal before moving or uninstalling it.' : '';
+  el('settings-close').focus();
+});
+el('settings-close').addEventListener('click', closeSettings);
+el('settings-dialog').addEventListener('click', (event) => { if (event.target === el('settings-dialog')) closeSettings(); });
+document.addEventListener('keydown', (event) => {
+  if (el('settings-dialog').hidden) return;
+  if (event.key === 'Escape') closeSettings();
+  if (event.key === 'Tab') {
+    const controls = ['settings-close', 'change-directory', 'uninstall-game', ...(!el('uninstall-confirm').hidden ? ['confirm-uninstall', 'cancel-uninstall'] : [])].map(el).filter((button) => !button.disabled);
+    if (!controls.length) { event.preventDefault(); return; }
+    const first = controls[0], last = controls.at(-1);
+    if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last.focus(); }
+    else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first.focus(); }
+  }
+});
+el('change-directory').addEventListener('click', () => {
+  if (busy || !state || state.running) return;
+  el('uninstall-confirm').hidden = true;
+  return run('change_install_directory');
+});
+el('uninstall-game').addEventListener('click', () => {
+  if (busy || !state?.installed || state.running) return;
+  el('uninstall-confirm').hidden = false;
+  el('cancel-uninstall').focus();
+});
+el('cancel-uninstall').addEventListener('click', () => { if (!busy) { el('uninstall-confirm').hidden = true; el('uninstall-game').focus(); } });
+el('confirm-uninstall').addEventListener('click', async () => {
+  if (busy || !state?.installed || state.running || el('uninstall-confirm').hidden) return;
+  await run('uninstall');
+  el('uninstall-confirm').hidden = true;
+});
 
 el('refresh').addEventListener('click', async () => {
   const gameCheck = run('check');
