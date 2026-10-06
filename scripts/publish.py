@@ -251,7 +251,7 @@ def publish(repository, version, notes, archive, manifest):
     return publish_release(repository, version, notes, (archive, manifest), f"The Signal {version}")
 
 
-def publish_release(repository, version, notes, assets, title):
+def publish_release(repository, version, notes, assets, title, target=None):
     details = json.loads(gh("repo", "view", repository, "--json", "isPrivate,isEmpty"))
     if details["isPrivate"]:
         raise ValueError("Distribution repository must be public. No credentials belong in the launcher.")
@@ -269,7 +269,8 @@ def publish_release(repository, version, notes, assets, title):
         raise ValueError(f"Could not check existing release: {existing.stderr.strip()}")
     else:
         gh("release", "create", tag, "--repo", repository,
-           "--draft", "--title", title, "--notes", notes or "Playtest build.")
+           "--draft", "--title", title, "--notes", notes or "Playtest build.",
+           *(["--target", target] if target else []))
         summary = json.loads(gh("release", "view", tag, "--repo", repository, "--json", "databaseId,isDraft"))
     release = json.loads(gh("api", f"repos/{repository}/releases/{summary['databaseId']}"))
     if not release.get("draft"):

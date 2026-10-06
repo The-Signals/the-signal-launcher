@@ -7,7 +7,7 @@ import unittest
 import zipfile
 from pathlib import Path
 from unittest.mock import patch, Mock
-from publish import package, publish, safe_path, load_package, upload_asset, UploadProgress
+from publish import package, publish, publish_release, safe_path, load_package, upload_asset, UploadProgress
 
 DRAFT = json.dumps({"draft": True, "upload_url": "https://uploads.github.com/repos/owner/repo/releases/1/assets{?name,label}", "assets": []})
 SUMMARY = '{"databaseId": 1, "isDraft": true}'
@@ -119,11 +119,22 @@ class PackagingTests(unittest.TestCase):
         create = mocked.call_args_list[1].args
         promote = mocked.call_args_list[-1].args
         self.assertIn("--draft", create)
+        self.assertNotIn("--target", create)
         self.assertNotIn("game.zip", create)
         self.assertEqual([call.args[1] for call in upload.call_args_list], [Path("game.zip"), Path("manifest.json")])
         self.assertIn("--draft=false", promote)
         self.assertIn("--latest", promote)
         self.assertEqual(url, "https://github.com/owner/repo/releases/tag/v0.1.0")
+
+    @patch("publish.subprocess.run", return_value=Mock(returncode=1, stderr="HTTP 404"))
+    @patch("publish.gh", side_effect=['{"isPrivate": false}', '', SUMMARY, DRAFT, 'secret-token', ''])
+    @patch("publish.upload_asset")
+    def test_launcher_release_tag_targets_the_built_commit(self, upload, mocked, _run):
+        commit = "a" * 40
+        publish_release("owner/repo", "0.1.0", "Notes", (Path("installer.exe"),), "Launcher", target=commit)
+        create = mocked.call_args_list[1].args
+        self.assertEqual(create[create.index("--target") + 1], commit)
+        upload.assert_called_once()
 
     @patch("publish.subprocess.run", return_value=Mock(returncode=1, stderr="HTTP 404"))
     @patch("publish.gh", side_effect=['{"isPrivate": false}', '', SUMMARY, DRAFT, 'secret-token'])

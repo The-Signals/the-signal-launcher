@@ -189,6 +189,41 @@ To test the complete update flow, manually install 0.1.2, then build/publish a
 newer launcher version. Confirm the prompt, **Later**, game-running block,
 download/signature validation, installation and restart on a test Windows machine.
 
+### GitHub Actions: automatic CI, manual releases
+
+`.github/workflows/ci.yml` runs UI, Python publishing, and Rust tests on Windows
+for every push and pull request. It does not need signing secrets or publish anything.
+
+`.github/workflows/release.yml` runs only through **Actions → Release launcher →
+Run workflow**. It reruns CI, builds and verifies the signed installer, then publishes
+the installer, `.sig`, and `latest.json` using the existing publisher. No Unity builds
+are uploaded. Releases are restricted to `main` in the launcher repository, and the
+version tag targets the exact commit built, not a newer commit pushed during the run.
+
+One-time GitHub setup:
+
+1. Create a GitHub **Environment** named `release`. Restrict its deployment branch
+   to `main`; optionally require a reviewer to approve publishing.
+2. Add environment secret `TAURI_SIGNING_PRIVATE_KEY` containing the **contents**
+   of your existing `~/.tauri/the-signal-launcher.key`, not its local path. Copy it
+   directly into GitHub's secret field; never commit it or paste it into chat.
+3. If the original key is encrypted, add environment secret
+   `TAURI_SIGNING_PRIVATE_KEY_PASSWORD`. Otherwise leave it unset.
+4. Ensure repository/organization policy permits GitHub Actions write access to
+   repository contents. The release job uses its short-lived `GITHUB_TOKEN`;
+   no personal access token is needed.
+
+For each release, commit a new matching version in `package.json`,
+`src-tauri/Cargo.toml`, and `src-tauri/tauri.conf.json`, and update both lockfiles
+(`npm install --package-lock-only` and `cargo check --manifest-path src-tauri/Cargo.toml`).
+Push to `main`, run the release workflow on `main`, and supply that version plus
+release notes. The workflow refuses to overwrite published versions or reuse a tag
+pointing at a different commit. **0.1.2 is already released; use a newer version.**
+Failed uploads remain drafts; the existing publisher's asset checksum/retry rules
+still apply. Rebuilding can produce different bytes, so a conflicting draft asset
+may need manual removal before a retry. The original local publishing commands
+remain available. Signing files are removed from the runner after each release.
+
 ### Steam-test builds (AppID 480)
 
 Use `--steam-test` only for your Development Build. It requires the build-root

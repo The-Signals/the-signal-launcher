@@ -82,6 +82,7 @@ def main():
     parser.add_argument("--notes", type=Path, help="UTF-8 launcher release notes")
     parser.add_argument("--output", type=Path, help="Local updater-manifest output directory")
     parser.add_argument("--publish", action="store_true", help="Upload installer, signature and latest.json to launcher repo")
+    parser.add_argument("--target", help="Commit SHA or branch for a new release tag (CI uses the built commit)")
     args = parser.parse_args()
     config = json.loads((LAUNCHER / "src-tauri/tauri.conf.json").read_text(encoding="utf-8"))
     distribution = json.loads((LAUNCHER / "distribution.json").read_text(encoding="utf-8"))
@@ -92,7 +93,7 @@ def main():
     version, assets = prepare_release(installer, config, repository, notes, output)
     print(f"Prepared signed launcher {version}: {assets[-1]}", flush=True)
     if args.publish:
-        print(f"Published: {publish_release(repository, version, notes, assets, f'The Signal Launcher {version}')}")
+        print(f"Published: {publish_release(repository, version, notes, assets, f'The Signal Launcher {version}', target=args.target)}")
     else:
         print("Local preparation only. Add --publish to upload to the launcher repository.")
 
