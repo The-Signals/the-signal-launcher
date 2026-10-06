@@ -19,8 +19,11 @@ function setupWindowControls() {
   el('window-minimize').addEventListener('click', () => windowAction(() => launcherWindow.minimize()));
   // close(), not destroy(), preserves the backend's protection during updates.
   el('window-close').addEventListener('click', () => windowAction(() => launcherWindow.close()));
-  el('window-drag').addEventListener('pointerdown', (event) => {
-    if (event.button === 0 && event.detail === 1) {
+  // Mouse events carry the click count; pointerdown.detail can be zero
+  // in WebView2, which previously prevented the native drag from starting.
+  el('window-drag').addEventListener('mousedown', (event) => {
+    if (event.button === 0 && event.detail === 1 && !event.target.closest('.window-controls')) {
+      event.preventDefault();
       windowAction(() => launcherWindow.startDragging());
     }
   });

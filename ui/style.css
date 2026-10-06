@@ -4,7 +4,8 @@ body { margin: 0; }
 [hidden] { display: none !important; }
 main { max-width: 780px; margin: auto; padding: 32px 38px; }
 .header-row { display: flex; align-items: center; gap: 16px; min-height: 28px; }
-#window-drag { flex: 1; align-self: stretch; display: flex; align-items: center; }
+.window-caption { flex: 1; }
+.custom-window .header-row { margin: -32px -38px 16px; padding: 16px 38px 0; min-height: 44px; }
 .custom-window #window-drag { user-select: none; cursor: grab; }
 .window-controls { display: flex; gap: 4px; }
 button.window-control { display: grid; place-items: center; width: 32px; height: 28px; padding: 0; background: transparent; border: 0; color: #9aa69d; }

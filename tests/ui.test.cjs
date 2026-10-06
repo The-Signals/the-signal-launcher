@@ -119,18 +119,33 @@ test('Windows inline controls minimize and request a safe close', async () => {
 test('header drags only on a primary single click, never on double-click', async () => {
   const h = harness(playable);
   await flush();
-  const drag = h.elements.get('window-drag').handlers.pointerdown;
-  drag({ button: 0, detail: 1 });
-  drag({ button: 0, detail: 2 });
-  drag({ button: 2, detail: 1 });
+  const drag = h.elements.get('window-drag').handlers.mousedown;
+  const target = { closest: () => null };
+  let prevented = 0;
+  drag({ button: 0, detail: 1, target, preventDefault() { prevented++; } });
+  drag({ button: 0, detail: 2, target });
+  drag({ button: 2, detail: 1, target });
   assert.deepEqual(h.windowCalls, ['startDragging']);
+  assert.equal(prevented, 1);
+  assert.equal(h.elements.get('window-drag').handlers.pointerdown, undefined);
+});
+
+test('window controls and their icons do not start a header drag', async () => {
+  const h = harness(playable);
+  await flush();
+  const drag = h.elements.get('window-drag').handlers.mousedown;
+  drag({ button: 0, detail: 1, target: { closest: () => h.elements.get('window-controls') } });
+  assert.deepEqual(h.windowCalls, []);
+  await h.elements.get('window-minimize').handlers.click();
+  await h.elements.get('window-close').handlers.click();
+  assert.deepEqual(h.windowCalls, ['minimize', 'close']);
 });
 
 test('other platforms retain their native window controls', async () => {
   const h = harness(playable, undefined, 'Macintosh');
   await flush();
   assert.equal(h.elements.get('window-controls').hidden, true);
-  assert.equal(h.elements.get('window-drag').handlers.pointerdown, undefined);
+  assert.equal(h.elements.get('window-drag').handlers.mousedown, undefined);
 });
 
 test('launcher update is optional and requires explicit confirmation', async () => {
