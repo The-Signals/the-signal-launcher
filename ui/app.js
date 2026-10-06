@@ -32,7 +32,22 @@ function setupWindowControls() {
 
 setupWindowControls();
 
+el('open-changelog').addEventListener('click', async () => {
+  el('open-changelog').disabled = true;
+  try {
+    await invoke('open_release_changelog');
+  } catch (error) {
+    el('status').textContent = `Could not open release changelog: ${error}`;
+    el('status').classList.add('error');
+  } finally {
+    el('open-changelog').disabled = false;
+  }
+});
+
 function launcherControls() {
+  const updateAvailable = Boolean(launcherUpdate?.available_version);
+  el('launcher-update-section').classList.toggle('update-available', updateAvailable);
+  el('launcher-update-badge').hidden = !updateAvailable;
   el('game-settings').disabled = busy || !state;
   el('change-directory').disabled = busy || !state || state.running;
   el('uninstall-game').disabled = busy || !state?.installed || state.running;
@@ -40,7 +55,7 @@ function launcherControls() {
   el('cancel-uninstall').disabled = busy;
   el('settings-close').disabled = busy;
   el('view-folder').disabled = busy || openingFolder || !state?.installed;
-  el('launcher-update').hidden = !launcherUpdate?.available_version;
+  el('launcher-update').hidden = !updateAvailable;
   el('launcher-update').disabled = busy || checkingLauncher || state?.running || !launcherUpdate?.available_version;
   el('launcher-install').disabled = busy || checkingLauncher || state?.running;
   el('launcher-later').disabled = busy;
@@ -72,6 +87,8 @@ function render(next) {
   el('latest').textContent = next.latest?.version ?? 'Unavailable';
   el('notes').textContent = next.latest?.notes || next.installed?.notes || 'No release notes yet.';
   const update = next.latest && (!next.installed || next.latest.sha256 !== next.installed.sha256 || next.latest.version !== next.installed.version);
+  el('primary').classList.toggle('action-play', Boolean(next.installed && !update && !next.running));
+  el('primary').classList.toggle('action-update', Boolean(update && !next.running));
   el('primary').textContent = next.running ? 'Game running' : update ? (next.installed ? 'Update' : 'Install') : next.installed ? 'Play' : 'No build available';
   el('primary').disabled = busy || next.running || next.check === 'error' || (!next.installed && !next.latest);
   el('refresh').disabled = busy;

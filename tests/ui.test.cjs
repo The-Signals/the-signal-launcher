@@ -6,6 +6,10 @@ const path = require('node:path');
 
 function harness(initial, updater = { current_version: '0.1.2', available_version: null, message: 'Launcher is up to date.' }, userAgent = 'Windows NT 10.0') {
   const elements = new Map();
+  elements.set('open-changelog', { disabled: false, handlers: {}, addEventListener(name, handler) { this.handlers[name] = handler; } });
+  for (const id of ['launcher-update-section', 'launcher-update-badge']) {
+    elements.set(id, { hidden: true, classes: new Set(), classList: { toggle(name, value) { if (value) elements.get(id).classes.add(name); else elements.get(id).classes.delete(name); } } });
+  }
   for (const id of ['game-settings', 'settings-dialog', 'settings-close', 'settings-status', 'install-directory', 'change-directory', 'uninstall-game', 'uninstall-confirm', 'confirm-uninstall', 'cancel-uninstall', 'window-controls', 'window-minimize', 'window-close', 'window-drag', 'installed', 'latest', 'notes', 'primary', 'refresh', 'status', 'progress', 'launcher-version', 'launcher-update', 'launcher-update-status', 'launcher-update-confirm', 'launcher-confirm-text', 'launcher-install', 'launcher-later', 'launcher-progress']) {
     elements.set(id, {
       textContent: '', disabled: false, hidden: true, value: 0,
@@ -137,6 +141,76 @@ test('failed operation shows its error and permits checking again', async () => 
 
 const updater = { current_version: '0.1.2', available_version: '0.1.3', message: 'Launcher update available.' };
 const playable = { installed, latest: installed, check: 'online', running: false, message: 'Ready' };
+
+test('Play and download actions use distinct color classes that reset with state changes', async () => {
+  const h = harness(playable);
+  await flush();
+  const primary = h.elements.get('primary');
+  assert.equal(primary.classes.has('action-play'), true);
+  assert.equal(primary.classes.has('action-update'), false);
+  h.setNext({ ...playable, latest });
+  await h.elements.get('refresh').handlers.click();
+  assert.equal(primary.textContent, 'Update');
+  assert.equal(primary.classes.has('action-play'), false);
+  assert.equal(primary.classes.has('action-update'), true);
+  h.setNext({ ...playable, installed: null, latest });
+  await h.elements.get('refresh').handlers.click();
+  assert.equal(primary.textContent, 'Install');
+  assert.equal(primary.classes.has('action-update'), true);
+  h.setNext({ ...playable, latest: null, check: 'unavailable' });
+  await h.elements.get('refresh').handlers.click();
+  assert.equal(primary.classes.has('action-play'), true);
+  assert.equal(primary.classes.has('action-update'), false);
+  h.setNext({ ...playable, running: true });
+  await h.elements.get('refresh').handlers.click();
+  assert.equal(primary.classes.has('action-play'), false);
+  assert.equal(primary.classes.has('action-update'), false);
+});
+
+test('release notes arrow opens the GitHub changelog without launching or installing', async () => {
+  const h = harness(playable);
+  await flush();
+  await h.elements.get('open-changelog').handlers.click();
+  assert.equal(h.calls.at(-1), 'open_release_changelog');
+  assert.equal(h.elements.get('open-changelog').disabled, false);
+  assert.equal(h.calls.includes('install'), false);
+  assert.equal(h.calls.includes('launch'), false);
+});
+
+test('changelog browser errors are visible without blocking Play', async () => {
+  const h = harness(playable);
+  await flush();
+  h.setNext(new Error('Browser unavailable'));
+  await h.elements.get('open-changelog').handlers.click();
+  assert.match(h.elements.get('status').textContent, /Could not open release changelog:.*Browser unavailable/);
+  assert.equal(h.elements.get('primary').disabled, false);
+  assert.equal(h.elements.get('open-changelog').disabled, false);
+});
+
+test('launcher updates display a prominent badge only while an update is available', async () => {
+  const h = harness(playable, updater);
+  await flush();
+  assert.equal(h.elements.get('launcher-update-badge').hidden, false);
+  assert.equal(h.elements.get('launcher-update-section').classes.has('update-available'), true);
+  assert.equal(h.elements.get('launcher-update').textContent, 'Update launcher to 0.1.3');
+  assert.equal(h.elements.get('primary').disabled, false);
+  assert.equal(h.calls.includes('install_launcher_update'), false);
+  h.setUpdater({ current_version: '0.1.3', available_version: null, message: 'Launcher is up to date.' });
+  await vm.runInContext('checkLauncherUpdate()', h.context);
+  assert.equal(h.elements.get('launcher-update-badge').hidden, true);
+  assert.equal(h.elements.get('launcher-update-section').classes.has('update-available'), false);
+  assert.equal(h.elements.get('launcher-update').hidden, true);
+});
+
+test('a failed launcher recheck clears the update highlight without blocking play', async () => {
+  const h = harness(playable, updater);
+  await flush();
+  h.setUpdater(new Error('Feed unavailable'));
+  await vm.runInContext('checkLauncherUpdate()', h.context);
+  assert.equal(h.elements.get('launcher-update-badge').hidden, true);
+  assert.equal(h.elements.get('launcher-update-section').classes.has('update-available'), false);
+  assert.equal(h.elements.get('primary').disabled, false);
+});
 
 test('cogwheel opens settings with the current directory and Escape restores focus', async () => {
   const h = harness({ ...playable, install_directory: 'D:\\Games\\The Signal' });

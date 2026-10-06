@@ -290,6 +290,40 @@ impl Launcher {
         Ok(self.root.join("versions").join(installed.directory))
     }
 
+    pub(crate) fn release_changelog_url(&self) -> Result<String> {
+        let installed = self.installation()?.map(|i| i.manifest);
+        // Match the frontend's notes fallback, including offline/legacy installations.
+        let manifest = self
+            .latest
+            .as_ref()
+            .filter(|m| !m.notes.is_empty())
+            .or_else(|| installed.as_ref().filter(|m| !m.notes.is_empty()))
+            .or(self.latest.as_ref())
+            .or(installed.as_ref());
+        let Some(manifest) = manifest else {
+            return Ok(format!(
+                "https://github.com/{}/releases/latest",
+                self.repository
+            ));
+        };
+        let repository = std::iter::once(&self.repository)
+            .chain(self.previous_repositories.iter())
+            .find(|repository| manifest.validate(repository).is_ok())
+            .ok_or("Release changelog metadata is invalid.")?;
+        let prefix = format!("https://github.com/{repository}/releases/download/");
+        let tag = manifest
+            .url
+            .strip_prefix(&prefix)
+            .unwrap()
+            .split('/')
+            .next()
+            .unwrap();
+        // Use the real release tag, which need not equal the displayed version.
+        Ok(format!(
+            "https://github.com/{repository}/releases/tag/{tag}"
+        ))
+    }
+
     pub(crate) fn game_running(&self) -> bool {
         let versions = self.root.join("versions");
         let versions = versions.canonicalize().unwrap_or(versions);
@@ -1043,6 +1077,41 @@ mod tests {
         )
         .unwrap();
         launcher
+    }
+
+    #[test]
+    fn changelog_matches_latest_or_installed_notes_and_uses_the_actual_tag() {
+        let data = tempfile::tempdir().unwrap();
+        let mut launcher = configured_install(data.path());
+        let installed_url = "https://github.com/ZiiMs/the-signal/releases/tag/v0.1.0";
+        assert_eq!(launcher.release_changelog_url().unwrap(), installed_url);
+        let mut latest = manifest();
+        latest.version = "0.2.0".into();
+        latest.url =
+            "https://github.com/ZiiMs/the-signal/releases/download/playtest-2/game.zip".into();
+        launcher.latest = Some(latest.clone());
+        assert_eq!(
+            launcher.release_changelog_url().unwrap(),
+            "https://github.com/ZiiMs/the-signal/releases/tag/playtest-2"
+        );
+        latest.notes.clear();
+        launcher.latest = Some(latest);
+        assert_eq!(launcher.release_changelog_url().unwrap(), installed_url);
+    }
+
+    #[test]
+    fn changelog_falls_back_to_configured_releases_and_rejects_untrusted_urls() {
+        let data = tempfile::tempdir().unwrap();
+        let mut launcher =
+            Launcher::new(data.path().into(), "ZiiMs/the-signal".into(), vec![]).unwrap();
+        assert_eq!(
+            launcher.release_changelog_url().unwrap(),
+            "https://github.com/ZiiMs/the-signal/releases/latest"
+        );
+        let mut latest = manifest();
+        latest.url = "https://example.com/releases/download/v0.1.0/game.zip".into();
+        launcher.latest = Some(latest);
+        assert!(launcher.release_changelog_url().is_err());
     }
 
     #[test]

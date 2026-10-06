@@ -13,7 +13,7 @@
       <div class="window-caption"><span class="window-logo" aria-hidden="true">◈</span> THE SIGNAL <span class="eyebrow">/ PLAYTEST</span></div>
       <div id="window-controls" class="window-controls" hidden role="group" aria-label="Window controls">
         <button id="window-minimize" class="window-control" aria-label="Minimize" title="Minimize"><svg viewBox="0 0 12 12" aria-hidden="true"><path d="M1 6h10"/></svg></button>
-        <button class="window-control" disabled aria-label="Maximize (unavailable)" title="Maximize is disabled"><svg viewBox="0 0 12 12" aria-hidden="true"><path d="M1.5 1.5h9v9h-9z"/></svg></button>
+        <button class="window-control" hidden disabled aria-label="Maximize (unavailable)" title="Maximize is disabled"><svg viewBox="0 0 12 12" aria-hidden="true"><path d="M1.5 1.5h9v9h-9z"/></svg></button>
         <button id="window-close" class="window-control" aria-label="Close" title="Close"><svg viewBox="0 0 12 12" aria-hidden="true"><path d="m1 1 10 10M11 1 1 11"/></svg></button>
       </div>
     </header>
@@ -27,15 +27,15 @@
       <div class="map-reference" aria-hidden="true">RELAY / 001<span>UNKNOWN ORIGIN</span></div>
       <div class="map-target" aria-hidden="true">⊕<span>TRANSMISSION SOURCE</span></div>
       <div class="map-cards">
-        <section class="notes" aria-labelledby="notes-heading"><div class="card-heading"><h2 id="notes-heading">RELEASE NOTES</h2><span aria-hidden="true">↗</span></div><p id="notes" tabindex="0" aria-label="Release notes content">No release notes yet.</p></section>
+        <section class="notes" aria-labelledby="notes-heading"><div class="card-heading"><h2 id="notes-heading">RELEASE NOTES</h2><button id="open-changelog" class="secondary changelog-button" aria-label="Open release changelog on GitHub" title="Open release changelog on GitHub (opens in your browser)">↗</button></div><p id="notes" tabindex="0" aria-label="Release notes content">No release notes yet.</p></section>
         <section class="control-card" aria-label="Game and launcher controls">
           <div class="game-label"><span>THE SIGNAL / WINDOWS</span><span class="playtest-tag">PLAYTEST</span></div>
           <p id="status" role="status" aria-live="polite">Checking for a transmission…</p>
-          <section class="versions" aria-label="Build versions"><div>INSTALLED<strong id="installed">—</strong></div><div>LATEST BUILD<strong id="latest">—</strong></div><button id="view-folder" class="secondary folder-button" disabled title="Open the installed game folder" aria-label="View game folder"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 7V5h6l2 2h10v12H3Z"/></svg><span>Game folder</span></button></section>
+          <section class="versions" aria-label="Build versions"><div>INSTALLED<strong id="installed">—</strong></div><div>LATEST BUILD<strong id="latest">—</strong></div><button id="view-folder" class="secondary folder-button" disabled title="Open the installed game folder" aria-label="View game folder"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 7V5h6l2 2h10v12H3Z"/></svg></button></section>
           <progress id="progress" max="100" value="0" hidden aria-label="Installation progress"></progress>
           <div class="actions game-actions"><button id="primary" disabled>Checking…</button><button id="refresh" class="secondary" disabled title="Check game and launcher updates"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 7v5h-5M20 12a8 8 0 1 0-2 5M20 12l-4-5"/></svg><span>Check again</span></button><button id="game-settings" class="secondary cog-button" disabled aria-label="Game settings" title="Game settings" aria-haspopup="dialog" aria-controls="settings-dialog"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9.5 3-.6 2.4-1.5.9-2.4-.7-2.5 4.3 1.8 1.7v1.8l-1.8 1.7 2.5 4.3 2.4-.7 1.5.9.6 2.4h5l.6-2.4 1.5-.9 2.4.7 2.5-4.3-1.8-1.7v-1.8l1.8-1.7L19 5.3l-2.4.7-1.5-.9-.6-2.4Z"/><circle cx="12" cy="12" r="3.5"/></svg></button></div>
-          <section class="launcher-update" aria-label="Launcher updates">
-            <div class="launcher-heading">LAUNCHER <span id="launcher-version">—</span><button id="launcher-update" class="secondary" hidden>Update launcher</button></div>
+          <section id="launcher-update-section" class="launcher-update" aria-label="Launcher updates">
+            <div class="launcher-heading">LAUNCHER <span id="launcher-version">—</span><span id="launcher-update-badge" class="update-badge" hidden>Update available</span><button id="launcher-update" hidden>Update launcher</button></div>
             <p id="launcher-update-status" role="status" aria-live="polite">Checking launcher updates…</p>
             <div id="launcher-update-confirm" hidden>
               <p id="launcher-confirm-text">The launcher will close, install the signed update, and restart. Close the game first.</p>
