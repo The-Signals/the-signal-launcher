@@ -46,6 +46,7 @@ pub enum CheckState {
 
 #[derive(Serialize)]
 pub struct Status {
+    install_directory: PathBuf,
     installed: Option<Manifest>,
     latest: Option<Manifest>,
     check: CheckState,
@@ -61,6 +62,7 @@ pub struct Progress {
 
 pub struct Launcher {
     root: PathBuf,
+    settings_path: Option<PathBuf>,
     repository: String,
     previous_repositories: Vec<String>,
     latest: Option<Manifest>,
@@ -189,6 +191,29 @@ fn write_json(path: &Path, value: &impl Serialize) -> Result<()> {
 }
 
 impl Launcher {
+    pub fn new_configured(
+        data: PathBuf,
+        repository: String,
+        previous_repositories: Vec<String>,
+    ) -> Result<Self> {
+        fs::create_dir_all(&data).map_err(io_error)?;
+        let settings_path = data.join("launcher-settings.json");
+        let root = if settings_path.exists() {
+            let root: PathBuf =
+                serde_json::from_slice(&fs::read(&settings_path).map_err(io_error)?)
+                    .map_err(io_error)?;
+            if !root.is_absolute() {
+                return Err("Install directory must be an absolute path.".into());
+            }
+            root
+        } else {
+            data.join("game")
+        };
+        let mut launcher = Self::new(root, repository, previous_repositories)?;
+        launcher.settings_path = Some(settings_path);
+        Ok(launcher)
+    }
+
     pub fn new(
         root: PathBuf,
         repository: String,
@@ -207,6 +232,7 @@ impl Launcher {
             .filter(|m| m.validate(&repository).is_ok());
         let mut launcher = Self {
             root,
+            settings_path: None,
             repository,
             previous_repositories,
             latest,
@@ -279,6 +305,7 @@ impl Launcher {
 
     pub fn status(&self) -> Result<Status> {
         Ok(Status {
+            install_directory: self.root.clone(),
             installed: self.installation()?.map(|i| i.manifest),
             latest: self.latest.clone(),
             check: self.check,
@@ -288,6 +315,175 @@ impl Launcher {
                 None => self.message.clone(),
             },
         })
+    }
+
+    fn managed_builds(&self) -> Result<Vec<PathBuf>> {
+        if is_link(&fs::symlink_metadata(&self.root).map_err(io_error)?) {
+            return Err("The install directory is a link; operation was skipped.".into());
+        }
+        let versions = self.root.join("versions");
+        if is_link(&fs::symlink_metadata(&versions).map_err(io_error)?) {
+            return Err("The versions folder is a link; operation was skipped.".into());
+        }
+        let mut builds = Vec::new();
+        for entry in fs::read_dir(versions).map_err(io_error)? {
+            let entry = entry.map_err(io_error)?;
+            let name = entry.file_name();
+            let Some(name) = name.to_str() else {
+                continue;
+            };
+            if name.starts_with("build-") && safe_path(name).is_ok() {
+                let metadata = fs::symlink_metadata(entry.path()).map_err(io_error)?;
+                if metadata.is_dir() && !is_link(&metadata) {
+                    validate_tree(&entry.path())?;
+                    builds.push(entry.path());
+                }
+            }
+        }
+        Ok(builds)
+    }
+
+    pub fn uninstall(&mut self) -> Result<Status> {
+        if self.game_running() {
+            return Err("Close The Signal before uninstalling it.".into());
+        }
+        let installed = self.installation()?.ok_or("The Signal is not installed.")?;
+        let builds = self.managed_builds()?;
+        let active = self.root.join("versions").join(&installed.directory);
+        if !builds.contains(&active) {
+            return Err("The active build is a link; uninstall was skipped.".into());
+        }
+        // Rename before removing the pointer; a failed metadata commit can roll back.
+        let quarantine = tempfile::Builder::new()
+            .prefix("build-")
+            .tempdir_in(self.root.join("versions"))
+            .map_err(io_error)?;
+        let retired = quarantine.path().join("retired");
+        fs::rename(&active, &retired).map_err(io_error)?;
+        if let Err(error) = fs::remove_file(self.root.join("active.json")) {
+            // Retain the files even if rollback itself fails.
+            if fs::rename(&retired, &active).is_err() {
+                let _ = quarantine.keep();
+            }
+            return Err(io_error(error));
+        }
+        let mut failures = Vec::new();
+        let retired_root = quarantine.keep();
+        for path in builds
+            .into_iter()
+            .filter(|p| p != &active)
+            .chain(std::iter::once(retired_root))
+        {
+            if let Err(error) = fs::remove_dir_all(&path) {
+                failures.push(io_error(error));
+            }
+        }
+        self.cleanup_warning = if failures.is_empty() {
+            None
+        } else {
+            Some(format!(
+                "Some game files could not be removed: {}.",
+                failures.join("; ")
+            ))
+        };
+        self.message = "The Signal was uninstalled. You can install it again at any time.".into();
+        self.status()
+    }
+
+    pub fn change_directory(&mut self, destination: PathBuf) -> Result<Status> {
+        if self.game_running() {
+            return Err("Close The Signal before changing its directory.".into());
+        }
+        let settings = self
+            .settings_path
+            .clone()
+            .ok_or("Install directory settings are unavailable.")?;
+        if !destination.is_absolute() {
+            return Err("Choose an absolute install directory.".into());
+        }
+        let installed = self.installation()?;
+        self.managed_builds()?;
+        fs::create_dir_all(&destination).map_err(io_error)?;
+        if is_link(&fs::symlink_metadata(&destination).map_err(io_error)?) {
+            return Err("Choose a directory that is not a link.".into());
+        }
+        let destination = destination.canonicalize().map_err(io_error)?;
+        let source = self.root.canonicalize().map_err(io_error)?;
+        if destination == source {
+            return self.status();
+        }
+        if destination.starts_with(&source) || source.starts_with(&destination) {
+            return Err("Choose a directory outside the current install directory.".into());
+        }
+        if fs::read_dir(&destination)
+            .map_err(io_error)?
+            .next()
+            .is_some()
+        {
+            return Err("The destination’s The Signal folder must be empty. No existing files were changed.".into());
+        }
+        // Stage on the destination drive. Failure leaves the original installation intact.
+        let stage = tempfile::Builder::new()
+            .prefix(".signal-move-")
+            .tempdir_in(&destination)
+            .map_err(io_error)?;
+        fs::create_dir(stage.path().join("versions")).map_err(io_error)?;
+        if let Some(ref installed) = installed {
+            let from = self.root.join("versions").join(&installed.directory);
+            copy_tree(
+                &from,
+                &stage.path().join("versions").join(&installed.directory),
+            )?;
+            write_json(&stage.path().join("active.json"), installed)?;
+        }
+        if let Some(ref latest) = self.latest {
+            write_json(&stage.path().join("latest.json"), latest)?;
+        }
+        if self.game_running() {
+            return Err("The game was started during the move. Close it and retry.".into());
+        }
+        let mut published = Vec::new();
+        let commit = (|| -> Result<()> {
+            for name in ["versions", "active.json", "latest.json"] {
+                let from = stage.path().join(name);
+                if from.exists() {
+                    let to = destination.join(name);
+                    // Refuse an unexpected collision rather than overwriting user files.
+                    if to.exists() {
+                        return Err("The destination changed during the move.".into());
+                    }
+                    fs::rename(from, &to).map_err(io_error)?;
+                    published.push(to);
+                }
+            }
+            write_json(&settings, &destination)
+        })();
+        if let Err(error) = commit {
+            for path in published {
+                if path.is_dir() {
+                    let _ = fs::remove_dir_all(path);
+                } else {
+                    let _ = fs::remove_file(path);
+                }
+            }
+            return Err(error);
+        }
+        let old_root = std::mem::replace(&mut self.root, destination);
+        self.cleanup_warning = None;
+        if let Some(installed) = installed {
+            let cleanup = (|| -> Result<()> {
+                fs::remove_file(old_root.join("active.json")).map_err(io_error)?;
+                fs::remove_dir_all(old_root.join("versions").join(installed.directory))
+                    .map_err(io_error)
+            })();
+            if let Err(error) = cleanup {
+                self.cleanup_warning = Some(format!(
+                    "The game was moved, but some original files could not be removed: {error}."
+                ));
+            }
+        }
+        self.message = "Install directory changed successfully.".into();
+        self.status()
     }
 
     pub fn refresh(&mut self) -> Result<Status> {
@@ -563,6 +759,45 @@ impl Launcher {
     }
 }
 
+fn validate_tree(path: &Path) -> Result<()> {
+    let metadata = fs::symlink_metadata(path).map_err(io_error)?;
+    if is_link(&metadata) || !(metadata.is_dir() || metadata.is_file()) {
+        return Err("Game files contain a link or unsupported file; operation was skipped.".into());
+    }
+    if metadata.is_dir() {
+        for entry in fs::read_dir(path).map_err(io_error)? {
+            validate_tree(&entry.map_err(io_error)?.path())?;
+        }
+    }
+    Ok(())
+}
+
+fn copy_tree(source: &Path, destination: &Path) -> Result<()> {
+    let metadata = fs::symlink_metadata(source).map_err(io_error)?;
+    if is_link(&metadata) {
+        return Err("Cannot move linked game files.".into());
+    }
+    if metadata.is_dir() {
+        fs::create_dir(destination).map_err(io_error)?;
+        for entry in fs::read_dir(source).map_err(io_error)? {
+            let entry = entry.map_err(io_error)?;
+            copy_tree(&entry.path(), &destination.join(entry.file_name()))?;
+        }
+    } else if metadata.is_file() {
+        let mut input = fs::File::open(source).map_err(io_error)?;
+        let mut output = fs::OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(destination)
+            .map_err(io_error)?;
+        std::io::copy(&mut input, &mut output).map_err(io_error)?;
+        output.sync_all().map_err(io_error)?;
+    } else {
+        return Err("Cannot move an unsupported game file.".into());
+    }
+    Ok(())
+}
+
 fn extract(archive_path: &Path, destination: &Path, manifest: &Manifest) -> Result<()> {
     let mut zip =
         zip::ZipArchive::new(fs::File::open(archive_path).map_err(io_error)?).map_err(io_error)?;
@@ -793,6 +1028,147 @@ mod tests {
         fs::write(directory.join("The-Signal.exe"), b"exe").unwrap();
         fs::write(directory.join("The-Signal_Data/Managed/game.dll"), b"data").unwrap();
         directory
+    }
+
+    fn configured_install(data: &Path) -> Launcher {
+        let launcher =
+            Launcher::new_configured(data.into(), "ZiiMs/the-signal".into(), vec![]).unwrap();
+        build(&launcher.root, "build-active");
+        write_json(
+            &launcher.root.join("active.json"),
+            &Installation {
+                manifest: manifest(),
+                directory: "build-active".into(),
+            },
+        )
+        .unwrap();
+        launcher
+    }
+
+    #[test]
+    fn uninstall_removes_managed_builds_and_preserves_unrelated_files_and_cache() {
+        let data = tempfile::tempdir().unwrap();
+        let mut launcher = configured_install(data.path());
+        build(&launcher.root, "build-old");
+        let unrelated = build(&launcher.root, "personal-files");
+        fs::write(launcher.root.join("save.dat"), b"save").unwrap();
+        launcher.latest = Some(manifest());
+        let status = launcher.uninstall().unwrap();
+        assert!(status.installed.is_none());
+        assert!(status.latest.is_some());
+        assert!(!launcher.root.join("active.json").exists());
+        assert!(!launcher.root.join("versions/build-active").exists());
+        assert!(!launcher.root.join("versions/build-old").exists());
+        assert!(unrelated.exists());
+        assert_eq!(fs::read(launcher.root.join("save.dat")).unwrap(), b"save");
+        assert!(launcher.uninstall().is_err());
+    }
+
+    #[test]
+    fn directory_move_preserves_build_and_persists_across_restart() {
+        let data = tempfile::tempdir().unwrap();
+        let destination = tempfile::tempdir().unwrap();
+        let mut launcher = configured_install(data.path());
+        let original = launcher.root.clone();
+        fs::write(original.join("save.dat"), b"save").unwrap();
+        launcher.latest = Some(manifest());
+        let target = destination.path().join("The Signal");
+        let status = launcher.change_directory(target.clone()).unwrap();
+        assert!(status.installed.is_some());
+        assert_eq!(
+            fs::read(
+                launcher
+                    .game_folder()
+                    .unwrap()
+                    .join("The-Signal_Data/Managed/game.dll")
+            )
+            .unwrap(),
+            b"data"
+        );
+        assert!(!original.join("active.json").exists());
+        assert!(!original.join("versions/build-active").exists());
+        assert_eq!(fs::read(original.join("save.dat")).unwrap(), b"save");
+        let restarted =
+            Launcher::new_configured(data.path().into(), "ZiiMs/the-signal".into(), vec![])
+                .unwrap();
+        assert_eq!(restarted.root, target.canonicalize().unwrap());
+        assert!(restarted.status().unwrap().installed.is_some());
+        assert!(restarted.latest.is_some());
+    }
+
+    #[test]
+    fn directory_can_be_selected_before_installation() {
+        let data = tempfile::tempdir().unwrap();
+        let destination = tempfile::tempdir().unwrap();
+        let mut launcher =
+            Launcher::new_configured(data.path().into(), "ZiiMs/the-signal".into(), vec![])
+                .unwrap();
+        launcher
+            .change_directory(destination.path().join("The Signal"))
+            .unwrap();
+        assert!(launcher.status().unwrap().installed.is_none());
+        assert!(launcher.root.join("versions").is_dir());
+    }
+
+    #[test]
+    fn settings_operations_refuse_linked_game_content() {
+        let data = tempfile::tempdir().unwrap();
+        let destination = tempfile::tempdir().unwrap();
+        let outside = tempfile::tempdir().unwrap();
+        fs::write(outside.path().join("keep.dat"), b"keep").unwrap();
+        let mut launcher = configured_install(data.path());
+        let link = launcher.game_folder().unwrap().join("linked-content");
+        #[cfg(windows)]
+        {
+            let output = Command::new("cmd")
+                .args(["/C", "mklink", "/J"])
+                .arg(&link)
+                .arg(outside.path())
+                .output()
+                .unwrap();
+            assert!(output.status.success(), "{output:?}");
+        }
+        #[cfg(unix)]
+        std::os::unix::fs::symlink(outside.path(), &link).unwrap();
+        assert!(launcher.uninstall().is_err());
+        assert!(launcher
+            .change_directory(destination.path().join("The Signal"))
+            .is_err());
+        assert!(launcher.status().unwrap().installed.is_some());
+        assert_eq!(fs::read(outside.path().join("keep.dat")).unwrap(), b"keep");
+        #[cfg(windows)]
+        fs::remove_dir(link).unwrap();
+        #[cfg(unix)]
+        fs::remove_file(link).unwrap();
+    }
+
+    #[test]
+    fn failed_move_never_changes_original_installation_or_destination_files() {
+        let data = tempfile::tempdir().unwrap();
+        let destination = tempfile::tempdir().unwrap();
+        let mut launcher = configured_install(data.path());
+        let original = launcher.root.clone();
+        fs::write(destination.path().join("keep.dat"), b"keep").unwrap();
+        assert!(launcher
+            .change_directory(destination.path().into())
+            .is_err());
+        assert_eq!(
+            fs::read(destination.path().join("keep.dat")).unwrap(),
+            b"keep"
+        );
+        assert!(launcher.change_directory(original.join("nested")).is_err());
+        // Simulate failure to persist the location after staging a complete copy.
+        fs::create_dir(data.path().join("launcher-settings.json")).unwrap();
+        let target = destination.path().join("empty");
+        assert!(launcher.change_directory(target.clone()).is_err());
+        assert!(fs::read_dir(target).unwrap().next().is_none());
+        assert_eq!(launcher.root, original);
+        assert!(launcher.status().unwrap().installed.is_some());
+        assert!(launcher
+            .game_folder()
+            .unwrap()
+            .join("The-Signal.exe")
+            .is_file());
     }
 
     #[test]

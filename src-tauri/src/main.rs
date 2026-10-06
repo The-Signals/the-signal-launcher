@@ -25,6 +25,7 @@ async fn operation(app: tauri::AppHandle, action: &'static str) -> Result<Status
                 let _ = app.emit("install-progress", progress);
             }),
             "launch" => launcher.launch(),
+            "uninstall" => launcher.uninstall(),
             _ => launcher.status(),
         }
     })
@@ -47,6 +48,35 @@ async fn launch(app: tauri::AppHandle) -> Result<Status, String> {
 #[tauri::command]
 async fn local_status(app: tauri::AppHandle) -> Result<Status, String> {
     operation(app, "status").await
+}
+
+#[tauri::command]
+async fn uninstall(app: tauri::AppHandle) -> Result<Status, String> {
+    operation(app, "uninstall").await
+}
+
+#[tauri::command]
+async fn change_install_directory(app: tauri::AppHandle) -> Result<Status, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let state = app.state::<AppState>();
+        let _guard = state.gate.acquire()?;
+        let mut launcher = state
+            .launcher
+            .try_lock()
+            .map_err(|_| "Another launcher operation is in progress.")?;
+        if launcher.game_running() {
+            return Err("Close The Signal before changing its directory.".into());
+        }
+        let Some(parent) = rfd::FileDialog::new()
+            .set_title("Choose a location for The Signal")
+            .pick_folder()
+        else {
+            return launcher.status();
+        };
+        launcher.change_directory(parent.join("The Signal"))
+    })
+    .await
+    .map_err(|e| e.to_string())?
 }
 
 #[tauri::command]
@@ -99,9 +129,10 @@ fn main() {
             let config: Distribution =
                 serde_json::from_str(include_str!("../../distribution.json"))?;
             // Game data belongs to this user, outside the launcher installation.
-            let root = app.path().app_local_data_dir()?.join("game");
-            let launcher = Launcher::new(root, config.repository, config.previous_repositories)
-                .map_err(std::io::Error::other)?;
+            let data = app.path().app_local_data_dir()?;
+            let launcher =
+                Launcher::new_configured(data, config.repository, config.previous_repositories)
+                    .map_err(std::io::Error::other)?;
             app.manage(AppState {
                 launcher: Mutex::new(launcher),
                 gate: updates::OperationGate::default(),
@@ -122,6 +153,8 @@ fn main() {
             launch,
             local_status,
             open_game_folder,
+            uninstall,
+            change_install_directory,
             updates::launcher_update_status,
             updates::install_launcher_update
         ])
