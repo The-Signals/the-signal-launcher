@@ -1,10 +1,13 @@
-use crate::{core::Progress, AppState};
+use crate::{
+    core::{format_launcher_download, Progress},
+    AppState,
+};
 use serde::Serialize;
 use std::sync::{
     atomic::{AtomicBool, Ordering},
     Arc,
 };
-use std::time::Duration;
+use std::time::{Duration, Instant};
 use tauri::{Emitter, Manager};
 use tauri_plugin_updater::UpdaterExt;
 
@@ -143,25 +146,45 @@ pub async fn install_launcher_update(
     )?;
     update.timeout = Some(Duration::from_secs(10 * 60));
     let mut downloaded = 0u64;
+    // Rolling throughput window; the chunk callback can fire per packet, so
+    // progress events are throttled to ~4/sec to avoid flooding the UI.
+    let mut window_start = Instant::now();
+    let mut window_bytes = 0u64;
+    let mut last_emit: Option<Instant> = None;
+    let mut last_speed = 0.0;
     let progress_app = app.clone();
     let finished_app = app.clone();
     let bytes = update
         .download(
             move |chunk, total| {
                 downloaded += chunk as u64;
+                window_bytes += chunk as u64;
+                let now = Instant::now();
+                let since_emit = last_emit
+                    .map(|t| now.duration_since(t))
+                    .unwrap_or(Duration::MAX);
+                // Always show the first bytes immediately; otherwise wait out
+                // the throttle window so the "@ MB/s" value stays readable.
+                if last_emit.is_some() && since_emit < Duration::from_millis(250) {
+                    return;
+                }
+                let window_elapsed = now.duration_since(window_start);
+                if window_elapsed >= Duration::from_millis(100) && window_bytes > 0 {
+                    last_speed = window_bytes as f64 / window_elapsed.as_secs_f64();
+                    window_start = now;
+                    window_bytes = 0;
+                }
                 let percent = total
                     .filter(|t| *t > 0)
                     .map(|t| (downloaded as f64 * 100.0 / t as f64).min(99.0));
                 let _ = progress_app.emit(
                     "launcher-update-progress",
                     Progress {
-                        message: format!(
-                            "Downloading launcher update… {:.2} MB",
-                            downloaded as f64 / 1_000_000.0
-                        ),
+                        message: format_launcher_download(downloaded, total, last_speed),
                         percent,
                     },
                 );
+                last_emit = Some(now);
             },
             move || {
                 let _ = finished_app.emit(
