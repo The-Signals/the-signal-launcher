@@ -7,7 +7,7 @@ use std::{
     io::{Read, Write},
     path::{Path, PathBuf},
     process::Command,
-    time::Duration,
+    time::{Duration, Instant},
 };
 
 type Result<T> = std::result::Result<T, String>;
@@ -58,6 +58,78 @@ pub struct Status {
 pub struct Progress {
     pub message: String,
     pub percent: Option<f64>,
+}
+
+/// Rolling download throughput in bytes/sec over `bytes` received in `elapsed`.
+pub(crate) fn download_speed(bytes: u64, elapsed: Duration) -> f64 {
+    let secs = elapsed.as_secs_f64();
+    if secs <= 0.0 {
+        0.0
+    } else {
+        bytes as f64 / secs
+    }
+}
+
+pub(crate) fn format_speed(bytes_per_sec: f64) -> String {
+    format!("{:.1} MB/s", bytes_per_sec / 1_000_000.0)
+}
+
+/// Remaining-time display for `remaining` bytes at `bytes_per_sec`.
+/// Returns `None` when the speed is effectively stalled.
+pub(crate) fn format_eta(remaining: u64, bytes_per_sec: f64) -> Option<String> {
+    if !(bytes_per_sec > 1.0) {
+        return None;
+    }
+    let secs = remaining as f64 / bytes_per_sec;
+    if !secs.is_finite() || secs < 0.0 {
+        return None;
+    }
+    let secs = secs.round() as u64;
+    if secs < 60 {
+        Some(format!("{secs}s left"))
+    } else if secs < 3600 {
+        Some(format!("{}m {:02}s left", secs / 60, secs % 60))
+    } else {
+        Some(format!("{}h {:02}m left", secs / 3600, (secs % 3600) / 60))
+    }
+}
+
+pub(crate) fn format_game_download(received: u64, total: u64, bytes_per_sec: f64) -> String {
+    let base = format!(
+        "Downloading… {} / {} MB",
+        received / 1_000_000,
+        total / 1_000_000
+    );
+    let speed = format_speed(bytes_per_sec);
+    match format_eta(total.saturating_sub(received), bytes_per_sec) {
+        Some(eta) => format!("{base} @ {speed} — {eta}"),
+        None => format!("{base} @ {speed}"),
+    }
+}
+
+pub(crate) fn format_launcher_download(
+    downloaded: u64,
+    total: Option<u64>,
+    bytes_per_sec: f64,
+) -> String {
+    let speed = format_speed(bytes_per_sec);
+    match total {
+        Some(total) if total > 0 => {
+            let base = format!(
+                "Downloading launcher update… {:.2} / {:.2} MB",
+                downloaded as f64 / 1_000_000.0,
+                total as f64 / 1_000_000.0
+            );
+            match format_eta(total.saturating_sub(downloaded), bytes_per_sec) {
+                Some(eta) => format!("{base} @ {speed} — {eta}"),
+                None => format!("{base} @ {speed}"),
+            }
+        }
+        _ => format!(
+            "Downloading launcher update… {:.2} MB @ {speed}",
+            downloaded as f64 / 1_000_000.0
+        ),
+    }
 }
 
 pub struct Launcher {
@@ -639,6 +711,13 @@ impl Launcher {
         let mut received = 0u64;
         let mut buffer = [0u8; 128 * 1024];
         let mut last_percent = -1i32;
+        // Rolling throughput window so the live "@ MB/s" value stays stable.
+        // Events are throttled to ~4/sec; percent changes can trigger an
+        // earlier emit once 100ms have passed since the previous one.
+        let start = Instant::now();
+        let mut window_start = start;
+        let mut window_bytes = 0u64;
+        let mut last_emit: Option<Instant> = None;
         loop {
             let count = response.read(&mut buffer).map_err(io_error)?;
             if count == 0 {
@@ -650,18 +729,40 @@ impl Launcher {
             }
             archive.write_all(&buffer[..count]).map_err(io_error)?;
             hash.update(&buffer[..count]);
+            window_bytes += count as u64;
             let percent = (received * 100 / manifest.size) as i32;
-            if percent != last_percent {
+            let now = Instant::now();
+            let since_emit = last_emit
+                .map(|t| now.duration_since(t))
+                .unwrap_or(Duration::MAX);
+            let should_emit = last_emit.is_none()
+                || since_emit >= Duration::from_millis(250)
+                || (percent != last_percent && since_emit >= Duration::from_millis(100));
+            if should_emit {
+                let window_elapsed = now.duration_since(window_start);
+                let speed = if window_elapsed >= Duration::from_millis(100) && window_bytes > 0 {
+                    download_speed(window_bytes, window_elapsed)
+                } else {
+                    download_speed(received, now.duration_since(start))
+                };
                 emit(Progress {
-                    message: format!(
-                        "Downloading… {} / {} MB",
-                        received / 1_000_000,
-                        manifest.size / 1_000_000
-                    ),
+                    message: format_game_download(received, manifest.size, speed),
                     percent: Some(percent as f64),
                 });
                 last_percent = percent;
+                window_start = now;
+                window_bytes = 0;
+                last_emit = Some(now);
             }
+        }
+        // A fast connection can finish inside the throttle window without ever
+        // emitting 100%; report the final byte count with the overall average.
+        if last_percent != 100 && received == manifest.size {
+            let speed = download_speed(received, start.elapsed());
+            emit(Progress {
+                message: format_game_download(received, manifest.size, speed),
+                percent: Some(100.0),
+            });
         }
         if received != manifest.size || format!("{:x}", hash.finalize()) != manifest.sha256 {
             return Err(
@@ -886,6 +987,56 @@ fn extract(archive_path: &Path, destination: &Path, manifest: &Manifest) -> Resu
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::time::Duration;
+
+    #[test]
+    fn download_speed_and_eta_formatting() {
+        assert_eq!(download_speed(0, Duration::from_secs(1)), 0.0);
+        assert_eq!(download_speed(1_000_000, Duration::ZERO), 0.0);
+        assert!((download_speed(2_000_000, Duration::from_secs(1)) - 2_000_000.0).abs() < 1.0);
+        assert_eq!(format_speed(0.0), "0.0 MB/s");
+        assert_eq!(format_speed(8_400_000.0), "8.4 MB/s");
+        assert_eq!(format_speed(25_000_000.0), "25.0 MB/s");
+        assert_eq!(format_eta(100, 0.0), None);
+        assert_eq!(format_eta(100, 0.5), None);
+        assert_eq!(
+            format_eta(2_500_000, 8_400_000.0).as_deref(),
+            Some("0s left")
+        );
+        assert_eq!(
+            format_eta(254_000_000, 8_400_000.0).as_deref(),
+            Some("30s left")
+        );
+        assert_eq!(
+            format_eta(600_000_000, 8_000_000.0).as_deref(),
+            Some("1m 15s left")
+        );
+        assert_eq!(
+            format_eta(7_200_000_000, 1_000_000.0).as_deref(),
+            Some("2h 00m left")
+        );
+        assert_eq!(format_eta(0, 8_000_000.0).as_deref(), Some("0s left"));
+    }
+
+    #[test]
+    fn download_messages_include_speed_and_eta() {
+        assert_eq!(
+            format_game_download(0, 299_000_000, 0.0),
+            "Downloading… 0 / 299 MB @ 0.0 MB/s"
+        );
+        assert_eq!(
+            format_game_download(45_000_000, 299_000_000, 8_400_000.0),
+            "Downloading… 45 / 299 MB @ 8.4 MB/s — 30s left"
+        );
+        assert_eq!(
+            format_launcher_download(48_000_000, Some(48_000_000), 8_000_000.0),
+            "Downloading launcher update… 48.00 / 48.00 MB @ 8.0 MB/s — 0s left"
+        );
+        assert_eq!(
+            format_launcher_download(12_340_000, None, 8_400_000.0),
+            "Downloading launcher update… 12.34 MB @ 8.4 MB/s"
+        );
+    }
 
     fn manifest() -> Manifest {
         Manifest {
