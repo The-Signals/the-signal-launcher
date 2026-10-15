@@ -59,8 +59,8 @@ def prepare_release(installer, config, repository, notes, output):
     if updater["endpoints"] != [expected_endpoint]:
         raise ValueError("Launcher update endpoint does not match the configured launcher repository.")
     check_signature_key(signature, updater["pubkey"], version)
-    if len(notes.encode("utf-8")) > 32 * 1024:
-        raise ValueError("Release notes exceed 32 KB.")
+    if len(notes.encode("utf-8")) > 1024 * 1024:
+        raise ValueError("Release notes exceed 1 MB.")
     # GitHub normalizes spaces in asset names to dots. Stage those exact
     # names before uploading so the updater URL matches the public asset.
     output.mkdir(parents=True, exist_ok=True)

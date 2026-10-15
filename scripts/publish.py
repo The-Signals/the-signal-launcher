@@ -160,8 +160,8 @@ def package(build, executable, version, notes, repository, output, steam_test=Fa
             raise ValueError("--steam-test requires a root steam_appid.txt containing exactly 480.")
     if any((build / p).exists() for p in (".git", "Assets", "ProjectSettings")):
         raise ValueError("This looks like source, not a Unity build. Refusing to publish it.")
-    if len(notes.encode("utf-8")) > 32 * 1024:
-        raise ValueError("Release notes exceed 32 KB.")
+    if len(notes.encode("utf-8")) > 1024 * 1024:
+        raise ValueError("Release notes exceed 1 MB.")
     if not re.fullmatch(r"[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+", repository):
         raise ValueError("Invalid GitHub owner/repository.")
 
@@ -239,7 +239,7 @@ def load_package(output, repository, retarget=False):
     if digest != manifest.get("sha256"):
         raise ValueError("Existing ZIP checksum does not match its manifest. Refusing to publish.")
     notes = manifest.get("notes", "")
-    if not isinstance(notes, str) or len(notes.encode("utf-8")) > 32 * 1024:
+    if not isinstance(notes, str) or len(notes.encode("utf-8")) > 1024 * 1024:
         raise ValueError("Existing release notes are invalid.")
     if needs_retarget:
         manifest["url"] = expected_url
