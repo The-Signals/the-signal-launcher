@@ -11,7 +11,13 @@ use std::{
 };
 
 type Result<T> = std::result::Result<T, String>;
-const MAX_MANIFEST: u64 = 64 * 1024;
+// Bounds the network read so a bad or hostile response cannot exhaust memory.
+// It is deliberately well above any valid manifest: the manifest is a small
+// machine descriptor (version, URL, sizes, hashes, launch args) plus a short
+// summary of notes. The full changelog lives in the GitHub release body, which
+// the launcher links to; notes must not become a shipping channel for it.
+const MAX_MANIFEST: u64 = 10 * 1024 * 1024;
+const MAX_NOTES: usize = 32 * 1024;
 const MAX_UNPACKED: u64 = 8 * 1024 * 1024 * 1024;
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -227,7 +233,7 @@ impl Manifest {
                         .all(|c| c.is_ascii_alphanumeric() || "._-+".contains(c))
             })
             || !self.url.ends_with(".zip")
-            || self.notes.len() > 32 * 1024
+            || self.notes.len() > MAX_NOTES
             || self.launch_arguments.len() > 32
             || self
                 .launch_arguments
@@ -1093,6 +1099,15 @@ mod tests {
         assert!(!next.matches(&original));
         next.launch_arguments = vec!["bad\0argument".into()];
         assert!(next.validate("ZiiMs/the-signal").is_err());
+    }
+
+    #[test]
+    fn rejects_oversized_notes() {
+        let mut m = manifest();
+        m.notes = "a".repeat(MAX_NOTES);
+        assert!(m.validate("ZiiMs/the-signal").is_ok());
+        m.notes = "a".repeat(MAX_NOTES + 1);
+        assert!(m.validate("ZiiMs/the-signal").is_err());
     }
 
     #[test]
