@@ -285,7 +285,10 @@ checks the executable and Steam-test AppID. It neither installs nor launches
 the game and does not contact GitHub.
 
 Build ZIPs are limited to 2 GB, unpacked builds to 8 GB and 100,000 entries. Under
-500 MB is the intended playtest use. Notes are plain text (not rendered HTML).
+500 MB is the intended playtest use. Notes are plain text (not rendered HTML) and
+the manifest carries a **short summary only** (at most 32 KB), never the full
+changelog. The complete commit history belongs in the GitHub release body, which
+the launcher links to; the manifest is fetched on every check, so keep it small.
 
 ## Manifest contract
 
@@ -304,6 +307,12 @@ The launcher reads `https://github.com/The-Signals/the-signal-data/releases/late
   "notes": "What changed in this playtest."
 }
 ```
+
+`notes` is a short, human-readable summary of the changes in this build. It must
+stay under 32 KB. Do not embed the complete commit history (or any unbounded
+blob) in the manifest: the launcher downloads it on every check and before every
+Play, and the "open changelog on GitHub" control covers the full history in the
+release body. The launcher reads at most 10 MB and rejects a larger response.
 
 ## Update and offline rules
 
