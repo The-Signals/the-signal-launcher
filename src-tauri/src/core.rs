@@ -17,7 +17,7 @@ type Result<T> = std::result::Result<T, String>;
 // summary of notes. The full changelog lives in the GitHub release body, which
 // the launcher links to; notes must not become a shipping channel for it.
 const MAX_MANIFEST: u64 = 10 * 1024 * 1024;
-const MAX_NOTES: usize = 32 * 1024;
+const MAX_NOTES: usize = 1024 * 1024;
 const MAX_UNPACKED: u64 = 8 * 1024 * 1024 * 1024;
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
